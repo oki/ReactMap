@@ -32,6 +32,22 @@ export const SET_EXTRA_FIELDS = gql`
   }
 `
 
+export const GAME_ACCOUNT_STATUS = gql`
+  query GameAccountStatus {
+    gameAccountStatus {
+      linked
+      friendCodeLast4
+      updatedAt
+    }
+  }
+`
+
+export const LINK_GAME_ACCOUNT = gql`
+  mutation LinkGameAccount($friendCode: String!) {
+    linkGameAccount(friendCode: $friendCode)
+  }
+`
+
 export const GET_BACKUPS = gql`
   query GetBackups {
     backups {

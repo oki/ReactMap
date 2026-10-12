@@ -14,6 +14,10 @@ const { annotateTelegramBlocks } = require('../utils/getTelegramStrategy')
 const { validateSelectedWebhook } = require('../utils/validateSelectedWebhook')
 const { PoracleAPI } = require('../services/Poracle')
 const { geocoder } = require('../services/geocoder')
+const {
+  getGameAccountStatus,
+  linkGameAccount,
+} = require('../services/gameAccount')
 const { scannerApi } = require('../services/scannerApi')
 const { getPolyVector } = require('../utils/getPolyVector')
 const { getPlacementCells } = require('../utils/getPlacementCells')
@@ -198,6 +202,12 @@ const resolvers = {
         ),
         webhooks: !!selectedWebhook,
       }
+    },
+    gameAccountStatus: (_, _args, { req, perms, Db }) => {
+      if (perms?.shinyPrediction && req?.user?.id) {
+        return getGameAccountStatus(Db, req.user.id)
+      }
+      return null
     },
     geocoder: (_, { search }, { perms, Event, req }) => {
       if (perms?.webhooks) {
@@ -862,6 +872,12 @@ const resolvers = {
       if (perms?.gymBadges && req?.user?.id) {
         await Db.models.Badge.insert(args.badge, args.gymId, req.user.id)
         return true
+      }
+      return false
+    },
+    linkGameAccount: async (_, args, { req, Db, perms }) => {
+      if (perms?.shinyPrediction && req?.user?.id) {
+        return linkGameAccount(Db, req.user.id, args.friendCode)
       }
       return false
     },

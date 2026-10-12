@@ -181,6 +181,12 @@ type Backup {
   updatedAt: Int
 }
 
+type GameAccountStatus {
+  linked: Boolean
+  friendCodeLast4: String
+  updatedAt: Int
+}
+
 type CustomButton {
   color: String
   href: String

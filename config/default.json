@@ -626,8 +626,10 @@
       "sessionTableName": "session",
       "backupTableName": "backups",
       "migrationTableName": "knex_migrations",
+      "gameAccountTableName": "gameAccounts",
       "maxConnections": 10,
       "userBackupLimits": 10,
+      "maxGameAccountsPerUser": 10,
       "userBackupSizeLimit": 10000000,
       "extraUserFields": []
     },
@@ -921,6 +923,11 @@
       },
       "dynamax": {
         "enabled": true,
+        "trialPeriodEligible": false,
+        "roles": []
+      },
+      "shinyPrediction": {
+        "enabled": false,
         "trialPeriodEligible": false,
         "roles": []
       }

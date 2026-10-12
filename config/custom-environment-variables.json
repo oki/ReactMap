@@ -1459,12 +1459,17 @@
       "sessionTableName": "DATABASE_SETTINGS_SESSION_TABLE_NAME",
       "backupTableName": "DATABASE_SETTINGS_BACKUP_TABLE_NAME",
       "migrationTableName": "DATABASE_SETTINGS_MIGRATION_TABLE_NAME",
+      "gameAccountTableName": "DATABASE_SETTINGS_GAME_ACCOUNT_TABLE_NAME",
       "maxConnections": {
         "__name": "DATABASE_SETTINGS_MAX_CONNECTIONS",
         "__format": "number"
       },
       "userBackupLimits": {
         "__name": "DATABASE_SETTINGS_USER_BACKUP_LIMITS",
+        "__format": "number"
+      },
+      "maxGameAccountsPerUser": {
+        "__name": "DATABASE_SETTINGS_MAX_GAME_ACCOUNTS_PER_USER",
         "__format": "number"
       },
       "userBackupSizeLimit": {
@@ -2098,6 +2103,20 @@
         },
         "roles": {
           "__name": "AUTHENTICATION_PERMS_DYNAMAX_ROLES",
+          "__format": "json"
+        }
+      },
+      "shinyPrediction": {
+        "enabled": {
+          "__name": "AUTHENTICATION_PERMS_SHINY_PREDICTION_ENABLED",
+          "__format": "boolean"
+        },
+        "trialPeriodEligible": {
+          "__name": "AUTHENTICATION_PERMS_SHINY_PREDICTION_TRIAL_PERIOD_ELIGIBLE",
+          "__format": "boolean"
+        },
+        "roles": {
+          "__name": "AUTHENTICATION_PERMS_SHINY_PREDICTION_ROLES",
           "__format": "json"
         }
       }

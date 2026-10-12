@@ -2,6 +2,7 @@
 const { Backup } = require('./Backup')
 const { Badge } = require('./Badge')
 const { Device } = require('./Device')
+const { GameAccount } = require('./GameAccount')
 const { Gym } = require('./Gym')
 const { Nest } = require('./Nest')
 const { NestSubmission } = require('./NestSubmission')
@@ -21,6 +22,7 @@ const { Weather } = require('./Weather')
 const rmModels = {
   Backup,
   Badge,
+  GameAccount,
   NestSubmission,
   Session,
   User,

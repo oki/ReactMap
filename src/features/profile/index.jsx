@@ -21,6 +21,7 @@ import { UserBackups } from './Backups'
 import { UserPermissions } from './Permissions'
 import { UserGymBadges } from './GymBadges'
 import { LinkAccounts } from './LinkAccounts'
+import { UserGameAccount } from './GameAccount'
 import { ExtraUserFields } from './ExtraFields'
 
 export function UserProfile() {
@@ -113,6 +114,7 @@ export function UserProfile() {
           >
             <TabPanel value="profile">
               <LinkAccounts />
+              <UserGameAccount />
               <ExtraUserFields refreshing={refreshing} />
               <UserBackups />
             </TabPanel>

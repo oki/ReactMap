@@ -13,6 +13,7 @@ type Query {
   backups: [Backup]
   checkUsername(username: String): Boolean
   fabButtons: FabButtons
+  gameAccountStatus: GameAccountStatus
   checkValidScan(mode: String, points: [[Float]]): [Boolean]
   customComponent(component: String): JSON
   devices(filters: JSON): [Device]
@@ -177,6 +178,7 @@ type Mutation {
   tutorial(tutorial: Boolean): Boolean
   strategy(strategy: String): Boolean
   setGymBadge(gymId: String, badge: Int): Boolean
+  linkGameAccount(friendCode: String!): Boolean
   setExtraFields(key: String, value: String): Boolean
   nestSubmission(id: ID, name: String): Boolean
   saveComponent(component: String, code: String): String

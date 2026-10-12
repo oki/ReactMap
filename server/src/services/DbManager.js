@@ -435,6 +435,8 @@ class DbManager extends Logger {
             this.models.Badge.knex(this.connections[this.reactMapDb])
             this.models.Backup = models.Backup
             this.models.Backup.knex(this.connections[this.reactMapDb])
+            this.models.GameAccount = models.GameAccount
+            this.models.GameAccount.knex(this.connections[this.reactMapDb])
             this.models.NestSubmission = models.NestSubmission
             this.models.NestSubmission.knex(this.connections[this.reactMapDb])
             this.models.Session = models.Session
