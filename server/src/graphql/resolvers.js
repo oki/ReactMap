@@ -26,12 +26,22 @@ const { getValidCoords } = require('../utils/getValidCoords')
 const {
   hasAnyPokestopPermission,
 } = require('../utils/hasAnyPokestopPermission')
+const {
+  annotatePredictions,
+  canPredictShiny,
+  getPredictionPlayerIds,
+} = require('../services/shinyPrediction')
 
 /** @type {import("@apollo/server").ApolloServerOptions<import("@rm/types").GqlContext>['resolvers']} */
 const resolvers = {
   JSON: GraphQLJSON,
   Query: {
-    available: (_, _args, { Event, Db, perms }) => {
+    available: async (_, _args, { Event, Db, perms, userId }) => {
+      // `every` rather than `some`: results from several sources are
+      // deduplicated and lose their provenance, so a schema missing a gate
+      // column must not enable predictions for rows from a schema that has it.
+      const supportsShinyPrediction = await canPredictShiny(Db, perms, userId)
+
       const supportsShinyStats = Array.isArray(Db.models?.Pokemon)
         ? Db.models.Pokemon.some(({ SubModel, ...ctx }) =>
             typeof SubModel.supportsShinyStats === 'function'
@@ -53,6 +63,7 @@ const resolvers = {
           styles: Event.uicons,
         },
         supportsShinyStats,
+        supportsShinyPrediction,
       }
       return data
     },
@@ -281,12 +292,18 @@ const resolvers = {
       }
       return {}
     },
-    pokemon: (_, args, { perms, Db }) => {
+    pokemon: async (_, args, { perms, Db, userId }) => {
       if (perms?.pokemon) {
-        if (args.filters.onlyLegacy) {
-          return Db.query('Pokemon', 'getLegacy', perms, args)
-        }
-        return Db.query('Pokemon', 'getAll', perms, args)
+        // The player ids are read here, server-side, from gameAccounts. Never
+        // from args and never from args.filters - that object round-trips to
+        // the browser, so putting an identity in it would publish it.
+        const [results, playerIds] = await Promise.all([
+          args.filters.onlyLegacy
+            ? Db.query('Pokemon', 'getLegacy', perms, args)
+            : Db.query('Pokemon', 'getAll', perms, args),
+          getPredictionPlayerIds(Db, perms, userId),
+        ])
+        return annotatePredictions(results, playerIds)
       }
       return []
     },

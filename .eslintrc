@@ -11,7 +11,8 @@
   "globals": {
     "document": true,
     "window": true,
-    "CONFIG": true
+    "CONFIG": true,
+    "BigInt": true
   },
   "rules": {
     "global-require": 0,

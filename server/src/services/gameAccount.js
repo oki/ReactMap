@@ -1,6 +1,8 @@
 // @ts-check
 const { log, TAGS } = require('@rm/logger')
 
+const { invalidatePlayerIds } = require('./shinyPrediction')
+
 const FRIEND_CODE_LENGTH = 12
 const FRIEND_CODE_REGEX = new RegExp(`^\\d{${FRIEND_CODE_LENGTH}}$`)
 
@@ -46,6 +48,10 @@ async function linkGameAccount(Db, userId, friendCode) {
     log.warn(TAGS.auth, `user ${userId} is at the linked game account limit`)
     throw new Error('game_account_limit_reached')
   }
+
+  // The prediction path caches this user's resolved player ids, so a new link
+  // must not wait out the TTL before it counts.
+  invalidatePlayerIds(userId)
 
   log.info(
     TAGS.auth,

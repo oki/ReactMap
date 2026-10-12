@@ -508,6 +508,22 @@ class Pokemon extends Model {
   }
 
   /**
+   * Whether this source reports every column the shiny eligibility gate needs.
+   * Unreported must mean ineligible, never "assume fine": without `seen_type`
+   * we cannot tell a wild spawn from a lure, and the roll was never validated
+   * for lures.
+   * @param {import("@rm/types").DbContext} ctx
+   * @returns {boolean}
+   */
+  static supportsShinyPrediction(ctx) {
+    return (
+      ctx?.hasSeenType === true &&
+      ctx?.hasCostume === true &&
+      ctx?.hasDisplayPokemonId === true
+    )
+  }
+
+  /**
    * @param {string[]} keys
    * @param {import('knex').Knex | null | undefined} [statsKnex]
    * @param {number | null | undefined} [preferredConnection]

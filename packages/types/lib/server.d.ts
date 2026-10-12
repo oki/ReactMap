@@ -50,6 +50,9 @@ export interface DbContext {
   hasBattlePokemonStats: boolean
   hasPokemonBackground: boolean
   hasPokemonShinyStats?: boolean
+  hasSeenType?: boolean
+  hasCostume?: boolean
+  hasDisplayPokemonId?: boolean
   connection?: number
   httpAuth?: { username: string; password: string } | null
 }

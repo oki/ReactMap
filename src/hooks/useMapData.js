@@ -47,6 +47,7 @@ export function useMapData(once = false) {
         audio,
         questConditions,
         supportsShinyStats,
+        supportsShinyPrediction,
       } = data.available
       const { icons: userIcons, audio: userAudio } = useStorage.getState()
       const existing = useMemory.getState()
@@ -107,6 +108,10 @@ export function useMapData(once = false) {
             typeof supportsShinyStats === 'boolean'
               ? supportsShinyStats
               : prev.featureFlags.supportsShinyStats,
+          supportsShinyPrediction:
+            typeof supportsShinyPrediction === 'boolean'
+              ? supportsShinyPrediction
+              : prev.featureFlags.supportsShinyPrediction,
         },
       }))
       useStorage.setState((prev) => {

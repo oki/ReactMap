@@ -378,6 +378,20 @@
     },
     "kojiOptions": {
       "bearerToken": "API_KOJI_OPTIONS_BEARER_TOKEN"
+    },
+    "shinyPrediction": {
+      "odds": {
+        "__name": "API_SHINY_PREDICTION_ODDS",
+        "__format": "number"
+      },
+      "accountCacheSeconds": {
+        "__name": "API_SHINY_PREDICTION_ACCOUNT_CACHE_SECONDS",
+        "__format": "number"
+      },
+      "unreleasedShinySpecies": {
+        "__name": "API_SHINY_PREDICTION_UNRELEASED_SHINY_SPECIES",
+        "__format": "json"
+      }
     }
   },
   "map": {

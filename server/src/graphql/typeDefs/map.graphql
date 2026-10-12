@@ -5,6 +5,7 @@ type MapData {
   icons: JSON
   audio: JSON
   supportsShinyStats: Boolean
+  supportsShinyPrediction: Boolean
 }
 
 type Badge {

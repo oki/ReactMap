@@ -78,6 +78,24 @@ class GameAccount extends Model {
   }
 
   /**
+   * Returns the resolved player ids linked to a user, in one query against the
+   * `userId` index. This is the only read that touches `playerId`, and the
+   * value never leaves the server - it is hashed in process and discarded.
+   * Rows whose `playerId` is still NULL are excluded in SQL rather than
+   * filtered afterwards, so the caller never sees a placeholder.
+   * @param {number} userId
+   * @returns {Promise<string[]>}
+   */
+  static async getPlayerIds(userId) {
+    const rows = await this.query()
+      .select('playerId')
+      .where('userId', userId)
+      .whereNotNull('playerId')
+    // @ts-ignore
+    return rows.map((row) => row.playerId).filter(Boolean)
+  }
+
+  /**
    * Returns the most recently updated account for a user, without selecting
    * `playerId` - that column is never exposed outside the database.
    * @param {number} userId

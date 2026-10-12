@@ -289,6 +289,7 @@ export function PokemonPopup({ pokemon, iconUrl, isTutorial = false }) {
         timeOfDay={timeOfDay}
         backgroundVisuals={backgroundVisuals}
       />
+      <PredictedShiny pokemon={pokemon} />
       <ShinyOdds shinyStats={shinyStats} />
       <Footer
         pokemon={pokemon}
@@ -536,6 +537,27 @@ const ShinyOdds = ({ shinyStats }) => {
           ]}
         />
       </Typography>
+    </Grid>
+  )
+}
+
+/**
+ * Shown only on a positive prediction. At 1/512 that is roughly 0.2% of
+ * eligible spawns, so a hit stands out and the popup is unchanged for
+ * everything else. A missing line therefore means both "predicted not shiny"
+ * and "no prediction possible" - `featureFlags.supportsShinyPrediction` is
+ * where that distinction lives.
+ */
+const PredictedShiny = ({ pokemon }) => {
+  const { t } = useTranslation()
+
+  if (!pokemon.predicted_shiny) {
+    return null
+  }
+
+  return (
+    <Grid xs={12} textAlign="center">
+      <Typography variant="caption">{t('predicted_shiny')}</Typography>
     </Grid>
   )
 }

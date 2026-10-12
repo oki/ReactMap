@@ -188,12 +188,22 @@ class DbManager extends Logger {
    * @returns {Promise<import("@rm/types").DbContext>}
    */
   static async schemaCheck(schema) {
-    const [hasSize, hasHeight, hasPokemonBackground] = await schema('pokemon')
+    const [
+      hasSize,
+      hasHeight,
+      hasPokemonBackground,
+      hasSeenType,
+      hasCostume,
+      hasDisplayPokemonId,
+    ] = await schema('pokemon')
       .columnInfo()
       .then((columns) => [
         'size' in columns,
         'height' in columns,
         'background' in columns,
+        'seen_type' in columns,
+        'costume' in columns,
+        'display_pokemon_id' in columns,
       ])
     const [
       hasRewardAmount,
@@ -283,6 +293,9 @@ class DbManager extends Logger {
       hasShortcode,
       hasPokemonShinyStats,
       hasPokemonBackground,
+      hasSeenType,
+      hasCostume,
+      hasDisplayPokemonId,
     }
   }
 
@@ -327,6 +340,13 @@ class DbManager extends Logger {
               // onlyConfirmed is ineffective and confirmed `a` reward filters
               // fall back to the grunt's possible-encounter pool.
               hasConfirmed: true,
+              // Likewise the Golbat scan always reports the columns the shiny
+              // eligibility gate needs, so a pure endpoint IS gate-capable;
+              // without this, predictions would be off for endpoint-only
+              // instances even though the data is there.
+              hasSeenType: true,
+              hasCostume: true,
+              hasDisplayPokemonId: true,
               // Pure endpoints have no SQL schema to probe.
               hasShowcaseFocus: false,
             }

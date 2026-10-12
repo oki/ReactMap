@@ -383,6 +383,7 @@
   "without_ar": "Without AR",
   "shiny_probability": "Shiny rate: <0/>",
   "shiny_sample": "{{percentage}}%: {{shiny}} shiny/{{checks}} checks since {{date}}",
+  "predicted_shiny": "Predicted shiny for you",
   "exclude_quest_multi": "Exclude {{reward}}",
   "exclude_battle_multi": "Exclude {{battle}}",
   "cluster_limit_0": "{{variable_0}} limit ({{variable_1}}) has been hit",

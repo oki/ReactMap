@@ -133,6 +133,14 @@
     },
     "kojiOptions": {
       "bearerToken": "KOJI_SECRET"
+    },
+    "shinyPrediction": {
+      "odds": 512,
+      "accountCacheSeconds": 60,
+      "unreleasedShinySpecies": [
+        824, 825, 826, 829, 830, 835, 836, 837, 838, 839, 852, 885, 917, 931,
+        971
+      ]
     }
   },
   "map": {

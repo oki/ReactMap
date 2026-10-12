@@ -190,6 +190,7 @@ type Pokemon {
   bestPvp: Int
   seen_type: String
   changed: Boolean
+  predicted_shiny: Boolean
   expire_timestamp: Int
   first_seen_timestamp: Int
   expire_timestamp_verified: Boolean

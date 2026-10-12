@@ -126,6 +126,7 @@ export const useMemory = create(() => ({
   settings: undefined,
   featureFlags: {
     supportsShinyStats: false,
+    supportsShinyPrediction: false,
   },
   available: {
     gyms: [],
