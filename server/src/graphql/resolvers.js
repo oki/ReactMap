@@ -215,7 +215,7 @@ const resolvers = {
       }
     },
     gameAccountStatus: (_, _args, { req, perms, Db }) => {
-      if (perms?.shinyPrediction && req?.user?.id) {
+      if (perms?.shiny && req?.user?.id) {
         return getGameAccountStatus(Db, req.user.id)
       }
       return null
@@ -893,7 +893,7 @@ const resolvers = {
       return false
     },
     linkGameAccount: async (_, args, { req, Db, perms }) => {
-      if (perms?.shinyPrediction && req?.user?.id) {
+      if (perms?.shiny && req?.user?.id) {
         return linkGameAccount(Db, req.user.id, args.friendCode)
       }
       return false

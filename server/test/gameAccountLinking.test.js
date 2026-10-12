@@ -108,7 +108,7 @@ test('Both operations require the perm and a session', async () => {
     resolvers.Query.gameAccountStatus(
       null,
       {},
-      { req: {}, perms: { shinyPrediction: true }, Db },
+      { req: {}, perms: { shiny: true }, Db },
     ),
     null,
   )
@@ -125,7 +125,7 @@ test('Both operations require the perm and a session', async () => {
     await resolvers.Mutation.linkGameAccount(
       null,
       { friendCode: '123456789012' },
-      { req: {}, perms: { shinyPrediction: true }, Db },
+      { req: {}, perms: { shiny: true }, Db },
     ),
     false,
   )

@@ -2120,17 +2120,17 @@
           "__format": "json"
         }
       },
-      "shinyPrediction": {
+      "shiny": {
         "enabled": {
-          "__name": "AUTHENTICATION_PERMS_SHINY_PREDICTION_ENABLED",
+          "__name": "AUTHENTICATION_PERMS_SHINY_ENABLED",
           "__format": "boolean"
         },
         "trialPeriodEligible": {
-          "__name": "AUTHENTICATION_PERMS_SHINY_PREDICTION_TRIAL_PERIOD_ELIGIBLE",
+          "__name": "AUTHENTICATION_PERMS_SHINY_TRIAL_PERIOD_ELIGIBLE",
           "__format": "boolean"
         },
         "roles": {
-          "__name": "AUTHENTICATION_PERMS_SHINY_PREDICTION_ROLES",
+          "__name": "AUTHENTICATION_PERMS_SHINY_ROLES",
           "__format": "json"
         }
       }

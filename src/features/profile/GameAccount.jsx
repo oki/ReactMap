@@ -27,7 +27,7 @@ const ERROR_KEYS = new Set([
  */
 export function UserGameAccount() {
   const { t } = useTranslation()
-  const hasPerm = useMemory((s) => s.auth.perms.shinyPrediction)
+  const hasPerm = useMemory((s) => s.auth.perms.shiny)
   const dateFormat = useFormatStore((s) => s.dateFormat)
 
   const [friendCode, setFriendCode] = React.useState('')

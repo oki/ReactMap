@@ -229,7 +229,7 @@ function annotatePredictions(results, playerIds) {
  * @returns {Promise<boolean>}
  */
 async function canPredictShiny(Db, perms, userId) {
-  if (!perms?.shinyPrediction || !userId) return false
+  if (!perms?.shiny || !userId) return false
   if (!Db?.models?.GameAccount) return false
 
   const sources = Db.models?.Pokemon
@@ -257,7 +257,7 @@ async function canPredictShiny(Db, perms, userId) {
  * @returns {Promise<string[]>}
  */
 async function getPredictionPlayerIds(Db, perms, userId) {
-  if (!perms?.shinyPrediction || !userId) return []
+  if (!perms?.shiny || !userId) return []
   if (!Db?.models?.GameAccount) return []
 
   const playerIds = await getPlayerIds(Db, userId)

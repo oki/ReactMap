@@ -288,30 +288,22 @@ test('Anything that is not a documented player id shape is rejected', () => {
 test('A malformed stored id is skipped, a valid sibling still predicts', async () => {
   const Db = mockDb({ playerIds: [`${HEX_PLAYER}\n`, 'NOT-AN-ID'] })
   invalidatePlayerIds(7)
-  const playerIds = await getPredictionPlayerIds(
-    Db,
-    { shinyPrediction: true },
-    7,
-  )
+  const playerIds = await getPredictionPlayerIds(Db, { shiny: true }, 7)
   assert.deepEqual(playerIds, [HEX_PLAYER])
 })
 
 test('Every id malformed yields no predictions', async () => {
   const Db = mockDb({ playerIds: ['NOT-AN-ID', '123456789012'] })
   invalidatePlayerIds(8)
-  assert.deepEqual(
-    await getPredictionPlayerIds(Db, { shinyPrediction: true }, 8),
-    [],
-  )
+  assert.deepEqual(await getPredictionPlayerIds(Db, { shiny: true }, 8), [])
 })
 
 test('Duplicate player ids are hashed once', async () => {
   const Db = mockDb({ playerIds: [HEX_PLAYER, HEX_PLAYER, HEX_PLAYER] })
   invalidatePlayerIds(9)
-  assert.deepEqual(
-    await getPredictionPlayerIds(Db, { shinyPrediction: true }, 9),
-    [HEX_PLAYER],
-  )
+  assert.deepEqual(await getPredictionPlayerIds(Db, { shiny: true }, 9), [
+    HEX_PLAYER,
+  ])
 })
 
 // --------------------------------------------------------------- gating
@@ -320,27 +312,21 @@ test('Without the permission nothing is read and nothing is predicted', async ()
   const Db = mockDb({ playerIds: [HEX_PLAYER] })
   invalidatePlayerIds(10)
   assert.deepEqual(await getPredictionPlayerIds(Db, {}, 10), [])
-  assert.deepEqual(
-    await getPredictionPlayerIds(Db, { shinyPrediction: false }, 10),
-    [],
-  )
+  assert.deepEqual(await getPredictionPlayerIds(Db, { shiny: false }, 10), [])
   assert.equal(Db.calls.getPlayerIds, 0)
-  assert.equal(await canPredictShiny(Db, { shinyPrediction: false }, 10), false)
+  assert.equal(await canPredictShiny(Db, { shiny: false }, 10), false)
 })
 
 test('An anonymous session is never predicted for', async () => {
   const Db = mockDb({ playerIds: [HEX_PLAYER] })
-  assert.deepEqual(
-    await getPredictionPlayerIds(Db, { shinyPrediction: true }, 0),
-    [],
-  )
+  assert.deepEqual(await getPredictionPlayerIds(Db, { shiny: true }, 0), [])
   assert.equal(Db.calls.getPlayerIds, 0)
 })
 
 test('Repeated polls inside the TTL reuse the cached player ids', async () => {
   const Db = mockDb({ playerIds: [HEX_PLAYER] })
   invalidatePlayerIds(11)
-  const perms = { shinyPrediction: true }
+  const perms = { shiny: true }
   await getPredictionPlayerIds(Db, perms, 11)
   await getPredictionPlayerIds(Db, perms, 11)
   await getPredictionPlayerIds(Db, perms, 11)
@@ -360,7 +346,7 @@ test('Linking an account discards that user cached ids', () => {
 })
 
 test('Capability needs the perm, an account and a capable backend', async () => {
-  const perms = { shinyPrediction: true }
+  const perms = { shiny: true }
   invalidatePlayerIds(12)
   assert.equal(
     await canPredictShiny(mockDb({ playerIds: [HEX_PLAYER] }), perms, 12),
@@ -400,7 +386,7 @@ test('One incapable source disables predictions for every source', async () => {
   assert.equal(
     await canPredictShiny(
       mockDb({ playerIds: [HEX_PLAYER], pokemonSources: [capable] }),
-      { shinyPrediction: true },
+      { shiny: true },
       15,
     ),
     true,
@@ -410,7 +396,7 @@ test('One incapable source disables predictions for every source', async () => {
   assert.equal(
     await canPredictShiny(
       mockDb({ playerIds: [HEX_PLAYER], pokemonSources: [capable, incapable] }),
-      { shinyPrediction: true },
+      { shiny: true },
       16,
     ),
     false,
