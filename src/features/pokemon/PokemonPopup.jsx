@@ -1,6 +1,7 @@
 // @ts-check
 import * as React from 'react'
 import { useLazyQuery } from '@apollo/client'
+import AutoAwesome from '@mui/icons-material/AutoAwesome'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 import MoreVert from '@mui/icons-material/MoreVert'
 import Grid from '@mui/material/Unstable_Grid2'
@@ -289,7 +290,6 @@ export function PokemonPopup({ pokemon, iconUrl, isTutorial = false }) {
         timeOfDay={timeOfDay}
         backgroundVisuals={backgroundVisuals}
       />
-      <PredictedShiny pokemon={pokemon} />
       <ShinyOdds shinyStats={shinyStats} />
       <Footer
         pokemon={pokemon}
@@ -403,9 +403,31 @@ const Header = ({ pokemon, metaData, iconUrl, userSettings, isTutorial }) => {
           />
         )}
       </Grid>
-      <Grid xs={6} textAlign="center">
-        <Typography variant={pokeName.length > 8 ? 'h6' : 'h5'}>
+      {/* 7 columns rather than 6, with the menu cell giving one up: the
+          prediction icon sits on this line, and at 6 the popup's ~262px of
+          content left the name cell ~131px against a ~143px line for a
+          nine-character name at h6, so the icon wrapped onto a line of its own.
+          The menu cell loses nothing usable - its IconButton is 24px of glyph
+          inside 48px of padding. No margins, paddings or gaps involved. */}
+      <Grid xs={7} textAlign="center">
+        {/* The header grid is a fixed 200px, so this cell holds ~109px of
+            content while a nine-character name at h6 is already ~98px on its
+            own. Name plus icon cannot fit at any column split that still
+            leaves room for the sprite and the menu, so the choice is between
+            overflowing and wrapping - and the icon wrapping onto a centred
+            line of its own reads as a bug. `nowrap` plus the non-breaking
+            space makes name-and-icon one unbreakable run that overflows
+            instead. Grid items do not clip, and the name already overflowed
+            this cell slightly before the icon existed. */}
+        <Typography
+          variant={pokeName.length > 8 ? 'h6' : 'h5'}
+          sx={{ whiteSpace: 'nowrap' }}
+        >
           {pokeName}
+          {/* A non-breaking space, not a style: the spacing rule is untouched,
+              and the break opportunity a plain space offers is the whole bug. */}
+          {pokemon.predicted_shiny ? '\u00A0' : ''}
+          <PredictedShiny pokemon={pokemon} />
         </Typography>
         {pokemon_id === 132 && display_pokemon_id ? (
           <Typography variant="caption">
@@ -415,7 +437,7 @@ const Header = ({ pokemon, metaData, iconUrl, userSettings, isTutorial }) => {
           <Typography variant="caption">{formName}</Typography>
         )}
       </Grid>
-      <Grid xs={3}>
+      <Grid xs={2}>
         <IconButton aria-haspopup="true" onClick={handleClick} size="large">
           <MoreVert data-background-icon="true" />
         </IconButton>
@@ -555,10 +577,31 @@ const PredictedShiny = ({ pokemon }) => {
     return null
   }
 
+  // An icon on its own states nothing, so the sentence that used to be the
+  // caption becomes its tooltip and its accessible name - the locale key is
+  // the same one, still translated, rather than deleted.
+  //
+  // `fontSize="inherit"` because the name beside it switches between h5 and h6
+  // on length; inheriting means the badge tracks that instead of being sized
+  // twice. The colour is the glow's gold, so the marker on the map and the
+  // badge in the popup are visibly the same claim.
   return (
-    <Grid xs={12} textAlign="center">
-      <Typography variant="caption">{t('predicted_shiny')}</Typography>
-    </Grid>
+    <Tooltip title={t('predicted_shiny')} arrow>
+      <AutoAwesome
+        htmlColor="#ffd700"
+        sx={{
+          // Still relative, so it tracks the name's h5/h6 switch, but smaller:
+          // the header grid is a fixed 200px and every pixel here is one the
+          // name does not have.
+          fontSize: '0.75em',
+          // On the baseline an icon sits low against a heading. Alignment, not
+          // spacing - no margin, padding or gap is introduced.
+          verticalAlign: 'middle',
+        }}
+        titleAccess={t('predicted_shiny')}
+        data-testid="predicted-shiny"
+      />
+    </Tooltip>
   )
 }
 
