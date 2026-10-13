@@ -115,6 +115,17 @@ async function startApollo(httpServer) {
                 response.body.kind === 'single' &&
                 'data' in response.body.singleResult
               ) {
+                // Truncation is a per-request fact, so it travels in
+                // `extensions` rather than as a field on `type Pokemon`: a
+                // per-row boolean would ride on every row of the hottest query
+                // in the app and would have no carrier at all when the filtered
+                // result set is empty, which is exactly the case that needs it.
+                if (contextValue.shinyCandidatesTruncated) {
+                  response.body.singleResult.extensions = {
+                    ...response.body.singleResult.extensions,
+                    shinyCandidatesTruncated: true,
+                  }
+                }
                 const endpoint =
                   // @ts-ignore
                   operation?.selectionSet?.selections?.[0]?.name?.value

@@ -33,7 +33,7 @@ import { create } from 'zustand'
  *      scanner: number,
  *    },
  *   },
- *   glowRules: ((pkmn: import('@rm/types').Pokemon) => string)[],
+ *   glowRules: ReturnType<typeof import('../utils/getGlowRules').getGlowRules>,
  *   menus: Partial<ReturnType<import('server/src/ui/advMenus')['advMenus']>>
  *   menuFilters: import('@rm/types').ClientFilterObj,
  *   filters: Partial<import('@rm/types').AllFilters>,
@@ -69,6 +69,7 @@ import { create } from 'zustand'
  *   extraUserFields: (import('@rm/types').ExtraField | string)[],
  *   advMenuCounts: { [K in keyof import('./useStorage').UseStorage['advMenu']]: { total: number, show: number } }
  *   advMenuFiltered: { [K in keyof import('./useStorage').UseStorage['advMenu']]: string[] }
+ *   shinyCandidatesTruncated: boolean,
  * }} UseMemory
  *
  * @type {import("zustand").UseBoundStore<import("zustand").StoreApi<UseMemory>>}
@@ -128,6 +129,7 @@ export const useMemory = create(() => ({
     supportsShinyStats: false,
     supportsShinyPrediction: false,
   },
+  shinyCandidatesTruncated: false,
   available: {
     gyms: [],
     pokemon: [],

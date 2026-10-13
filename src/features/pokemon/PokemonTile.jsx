@@ -35,9 +35,20 @@ const INTERACTION_RANGE_COLOR = '#BA42F6'
  */
 const getGlowStatus = (pkmn, userSettings) => {
   const { glowRules } = useMemory.getState()
-  const valid = glowRules
-    .map((rule) => userSettings[rule(pkmn)])
-    .filter(Boolean)
+  /** @type {string[]} */
+  const valid = []
+  let exclusive = ''
+  glowRules.forEach((rule) => {
+    const colour = userSettings[rule.match(pkmn)]
+    if (!colour) return
+    // An exclusive rule keeps its own colour instead of collapsing into
+    // `Multiple`. A predicted shiny that is also a hundo is the rarest thing on
+    // the map and the one a user most wants to recognise, so it must not come
+    // out purple - and it is rare enough that nobody would catch it in testing.
+    if (rule.exclusive && !exclusive) exclusive = colour
+    valid.push(colour)
+  })
+  if (exclusive) return exclusive
   return valid.length > 1 ? userSettings.Multiple : valid[0]
 }
 

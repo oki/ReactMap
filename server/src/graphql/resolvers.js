@@ -292,17 +292,33 @@ const resolvers = {
       }
       return {}
     },
-    pokemon: async (_, args, { perms, Db, userId }) => {
+    pokemon: async (_, args, context) => {
+      const { perms, Db, userId } = context
       if (perms?.pokemon) {
         // The player ids are read here, server-side, from gameAccounts. Never
         // from args and never from args.filters - that object round-trips to
         // the browser, so putting an identity in it would publish it.
+        //
+        // `Db.getAll` rather than `Db.query` because it is the overload that
+        // forwards `userId` to the model, which the "My shinies" filter needs
+        // to read the same accounts (the legacy path carries no filter, so it
+        // stays on `Db.query`).
         const [results, playerIds] = await Promise.all([
           args.filters.onlyLegacy
             ? Db.query('Pokemon', 'getLegacy', perms, args)
-            : Db.query('Pokemon', 'getAll', perms, args),
+            : Db.getAll('Pokemon', perms, args, userId),
           getPredictionPlayerIds(Db, perms, userId),
         ])
+        // The model reports a capped candidate set on `args` - the only
+        // per-request channel it has - and it travels from here to the response
+        // `extensions`, so the client can say the answer is incomplete instead
+        // of showing a confident near-empty map.
+        if (args.shinyCandidatesTruncated) {
+          context.shinyCandidatesTruncated = true
+        }
+        // Idempotent when the model already annotated for the filter: same pure
+        // roll, same inputs, same verdict. It is what keeps the legacy path and
+        // the filter-off path annotated without a second mechanism.
         return annotatePredictions(results, playerIds)
       }
       return []

@@ -527,6 +527,12 @@ export function PkmnFilterHelp() {
                 disabled={!perms.iv}
                 sx={[SX_PROPS, { my: 1, mx: GAP }]}
               />
+              <Chip
+                label={t('my_shinies')}
+                color="primary"
+                disabled={!perms.shiny}
+                sx={[SX_PROPS, { my: 1, mx: GAP }]}
+              />
             </Grid2>
           </Grid2>
         )}

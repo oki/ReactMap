@@ -280,6 +280,7 @@ export interface PokemonGlow
   Hundo?: string
   Nundo?: string
   'Top PVP Rank'?: string
+  MyShinies?: string
   Multiple?: string
 }
 export interface ClientOptions

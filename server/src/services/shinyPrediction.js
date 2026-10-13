@@ -152,6 +152,28 @@ function isEligible(pokemon, unreleasedShinySpecies) {
 }
 
 /**
+ * The SQL-expressible half of `isEligible`, as data rather than as a query, so
+ * the candidate prefilter in the model and the gate here cannot drift apart.
+ *
+ * It is deliberately a SUPERSET of `isEligible`: `costume` and
+ * `display_pokemon_id` are left out because their NULL semantics differ across
+ * Golbat, RDM and Chuck, and a prefilter that excluded an eligible row would
+ * lose a prediction with nothing to notice. `isEligible` stays authoritative -
+ * this only spares the candidate budget the rows the gate would reject anyway,
+ * which at low zoom is most of them (`nearby_stop` / `nearby_cell`).
+ * @returns {{ seenTypes: string[], excludedSpecies: number[] }}
+ */
+function getCandidatePrefilter() {
+  return {
+    seenTypes: [...ELIGIBLE_SEEN_TYPES],
+    excludedSpecies: [
+      DITTO_ID,
+      ...config.getSafe('api.shinyPrediction.unreleasedShinySpecies'),
+    ],
+  }
+}
+
+/**
  * Annotates a result array in place with `predicted_shiny`, leaving the field
  * absent for every spawn that is ineligible or that no account hits.
  *
@@ -220,6 +242,28 @@ function annotatePredictions(results, playerIds) {
 }
 
 /**
+ * Whether every pokemon source reports the columns the eligibility gate needs.
+ *
+ * Synchronous on purpose, and exported for that reason: `drawer()` runs inside
+ * the synchronous `getServerSettings`, so the drawer's visibility gate cannot
+ * await the linked-account read and has to make do with the permission plus
+ * this. The account half is covered client-side by
+ * `featureFlags.supportsShinyPrediction`.
+ * @param {import('./DbManager').DbManager} Db
+ * @returns {boolean}
+ */
+function sourcesSupportShinyPrediction(Db) {
+  const sources = Db?.models?.Pokemon
+  return Array.isArray(sources) && sources.length
+    ? sources.every(({ SubModel, ...ctx }) =>
+        typeof SubModel.supportsShinyPrediction === 'function'
+          ? SubModel.supportsShinyPrediction(ctx)
+          : false,
+      )
+    : false
+}
+
+/**
  * True when this session could receive a prediction at all: the permission, at
  * least one resolved player id, and a scanner source that reports the columns
  * the gate needs. The client uses it to keep a meaningless popup line away.
@@ -231,17 +275,7 @@ function annotatePredictions(results, playerIds) {
 async function canPredictShiny(Db, perms, userId) {
   if (!perms?.shiny || !userId) return false
   if (!Db?.models?.GameAccount) return false
-
-  const sources = Db.models?.Pokemon
-  const backendCapable =
-    Array.isArray(sources) && sources.length
-      ? sources.every(({ SubModel, ...ctx }) =>
-          typeof SubModel.supportsShinyPrediction === 'function'
-            ? SubModel.supportsShinyPrediction(ctx)
-            : false,
-        )
-      : false
-  if (!backendCapable) return false
+  if (!sourcesSupportShinyPrediction(Db)) return false
 
   const playerIds = await getPlayerIds(Db, userId)
   return playerIds.length > 0
@@ -275,11 +309,13 @@ async function getPredictionPlayerIds(Db, perms, userId) {
 module.exports = {
   annotatePredictions,
   canPredictShiny,
+  getCandidatePrefilter,
   getPredictionPlayerIds,
   invalidatePlayerIds,
   isEligible,
   maskIdentity,
   normalizePlayerId,
+  sourcesSupportShinyPrediction,
   DITTO_ID,
   CLAMPED_COSTUME,
   ELIGIBLE_SEEN_TYPES,

@@ -37,6 +37,7 @@ class PkmnBackend {
    * @param {boolean} mods.onlyPvp51
    * @param {boolean} mods.onlyHundoIv
    * @param {boolean} mods.onlyZeroIv
+   * @param {boolean} mods.onlyPredictedShiny
    * @param {boolean} mods.onlyAllPvp
    * @param {boolean} mods.onlyEasyMode
    * @param {string[]} mods.onlyAreas
@@ -361,6 +362,17 @@ class PkmnBackend {
         (this.mods.onlyZeroIv && pokemon.iv === 0)
       )
         return true
+      // Additive, exactly like the two above: a predicted shiny surfaces
+      // whether or not its species is enabled, because that is what "Global
+      // Quick Selects" means. Do NOT turn this into an AND - intersected with a
+      // user running both IV extremes it would be ~1 in a million spawns, and
+      // the feature would look broken rather than rare.
+      //
+      // It only reads the field. The roll lives in services/shinyPrediction.js
+      // and runs before this loop, so the filter and the popup line can never
+      // disagree about the same spawn. A second implementation here would be
+      // the one bug nobody could explain.
+      if (this.mods.onlyPredictedShiny && pokemon.predicted_shiny) return true
       if (
         !this.mods.onlyLinkGlobal ||
         this.id === getWildFilterKey(pokemon.pokemon_id, pokemon.form)
@@ -421,6 +433,12 @@ class PkmnBackend {
       seen_type: pokemon.seen_type,
       changed: !!pokemon.changed,
       background: pokemon.background,
+      // Carried through because `valid()` filters on it and this builder is a
+      // whitelist: without this line the `onlyPredictedShiny` clause below
+      // would read `undefined` on every row and silently match nothing. Not
+      // gated on `perms.iv` - the prediction is gated on `perms.shiny`, and the
+      // field is only ever set when that permission and a linked account hold.
+      predicted_shiny: pokemon.predicted_shiny,
     }
     if (!result.seen_type) {
       if (result.spawn_id === null) {

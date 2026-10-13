@@ -24,7 +24,21 @@ const {
   DITTO_ID,
   getWildFilterKey,
 } = require('../filters/pokemon/getWildFilterKey')
+const {
+  annotatePredictions,
+  getCandidatePrefilter,
+  getPredictionPlayerIds,
+} = require('../services/shinyPrediction')
 const { state } = require('../services/state')
+
+/**
+ * Endpoints that answered /api/pokemon/v3/scan with something other than its
+ * envelope, i.e. Golbat builds without that route. Process-lifetime on
+ * purpose: the only cost of being wrong is a coarser truncation warning, and
+ * re-probing on every poll would spend a wasted request per 20 seconds.
+ * @type {Set<string>}
+ */
+const ENDPOINTS_WITHOUT_V3 = new Set()
 
 class Pokemon extends Model {
   static get tableName() {
@@ -86,11 +100,18 @@ class Pokemon extends Model {
    * @param {import("@rm/types").Permissions} perms
    * @param {object} args
    * @param {import("@rm/types").DbContext} ctx
+   * @param {number} [userId]
    * @returns {Promise<Partial<import("@rm/types").Pokemon>[]>}
    */
-  static async getAll(perms, args, ctx) {
+  static async getAll(perms, args, ctx, userId) {
     const { iv: ivs, pvp, areaRestrictions } = perms
-    const { onlyIvOr, onlyHundoIv, onlyZeroIv, onlyAreas = [] } = args.filters
+    const {
+      onlyIvOr,
+      onlyHundoIv,
+      onlyZeroIv,
+      onlyPredictedShiny,
+      onlyAreas = [],
+    } = args.filters
     const { hasSize, hasHeight, hasPokemonBackground, mem, secret, httpAuth } =
       ctx
     const { filterMap, globalFilter } = this.getFilters(perms, args, ctx)
@@ -100,13 +121,36 @@ class Pokemon extends Model {
       .some((league) => globalFilter.filterKeys.has(league.name))
     const ts = Math.floor(Date.now() / 1000)
     const queryLimits = config.getSafe('api.queryLimits')
+    const shinyConfig = config.getSafe('api.shinyPrediction')
+
+    // The "My shinies" quick select. The roll is not expressible in SQL or as a
+    // Golbat filter, so unlike every other quick select this one cannot be
+    // pushed into the data source: it widens the query to fetch candidates and
+    // decides in process. The player ids are read here, server-side, through
+    // the same cached reader the resolver uses, keyed by `userId` - never from
+    // `args.filters`, which is what the browser sent and round-trips back to
+    // it. (`state.db` is the same DbManager instance the resolver holds; see
+    // middleware/apollo.js, where the GraphQL context's `Db` is `state.db`.)
+    const shinyFilterRequested =
+      !!onlyPredictedShiny &&
+      !!perms.shiny &&
+      Pokemon.supportsShinyPrediction(ctx)
+    const shinyPlayerIds = shinyFilterRequested
+      ? await getPredictionPlayerIds(state.db, perms, userId)
+      : []
+    // No linked account resolves to no filter rather than to an empty map, so a
+    // stale `true` left in a user's stored filters after unlinking is inert.
+    const shinyFilterActive = shinyPlayerIds.length > 0
 
     // quick check to make sure no Pokemon are returned when none are enabled for users with only Pokemon perms
     if (!ivs && !pvp) {
       const noPokemonSelect = Object.keys(args.filters).find(
         (x) => x.charAt(0) !== 'o',
       )
-      if (!noPokemonSelect) return []
+      // The quick select is additive, so it is a selection in its own right: a
+      // user with only the pokemon and shiny perms who enables nothing but "My
+      // shinies" asked for their shinies, not for an empty map.
+      if (!noPokemonSelect && !shinyFilterActive) return []
     }
 
     const query = this.query()
@@ -217,6 +261,26 @@ class Pokemon extends Model {
         if (onlyHundoIv && ivs) {
           ivOr.orWhere('iv', 100)
         }
+        // Candidate branch for "My shinies". Only meaningful when the group
+        // above actually restricts anything: without `iv`/`pvp` perms the group
+        // is empty, so the query already returns every row in the bbox and
+        // adding this branch would NARROW it, dropping the nearby_* rows the
+        // user's species filter would otherwise have shown.
+        //
+        // It carries the SQL-expressible half of the eligibility gate so the
+        // candidate budget is spent on rows that can actually roll: nearby_stop
+        // and nearby_cell spawns are a large share at low zoom and cost nothing
+        // to reject here. `isEligible` stays authoritative - this is a superset
+        // prefilter, and the species constants come from the module that owns
+        // the gate so the two cannot drift apart.
+        if (shinyFilterActive && (ivs || pvp)) {
+          const { seenTypes, excludedSpecies } = getCandidatePrefilter()
+          ivOr.orWhere((candidate) => {
+            candidate
+              .whereIn('pokemon.seen_type', seenTypes)
+              .whereNotIn('pokemon.pokemon_id', excludedSpecies)
+          })
+        }
         if (manualId !== null) {
           ivOr.orWhereIn('id', [manualId])
         }
@@ -254,27 +318,113 @@ class Pokemon extends Model {
       if (onlyHundoIv)
         filters.push({ iv: { min: 100, max: 100 }, pokemon: globalPokes })
     }
-    /** @type {import("@rm/types").Pokemon[]} */
+    if (mem && shinyFilterActive) {
+      // Golbat cannot evaluate the roll, so candidates have to come back whole.
+      // A clause with no conditions matches every row in its group, so the
+      // everything-clause is simply `{}` - note `filters: []` is the opposite,
+      // "nothing matches", because an empty clause map makes every candidate
+      // fall through the key lookups.
+      //
+      // The repetition is NOT redundancy. Golbat picks exactly ONE clause group
+      // per candidate - most specific wins, `{id,form}` then `{id,-1}` then the
+      // `{-1,-1}` catch-all - and groups are never merged. So for a species the
+      // user's own filter already keyed, only that species' group runs and a
+      // lone catch-all candidate clause would never be consulted: a predicted
+      // shiny Pikachu with ordinary IVs would be dropped by the very filter
+      // meant to surface it. Clauses WITHIN a group are OR'd, so repeating the
+      // condition-free clause under each key that is already present gives the
+      // union. Golbat's own docs/personal-shinies.md prescribes this, and
+      // upstream currently sits on a revert of the clause-merge change, so
+      // most-specific-only is deliberate rather than a bug about to go away.
+      //
+      // Unlike the SQL path there is no server-side half of the eligibility
+      // gate here: the DNF condition set is IV/atk/def/sta/level/CP/gender/size
+      // plus the PVP leagues, with no `seen_type`, `costume` or
+      // `display_pokemon_id` (see the DnfFilter type). nearby_* and lure_* rows
+      // all come back and `isEligible` carries the whole load after the fetch.
+      filters.push(...Pokemon.shinyCandidateClauses(filters))
+    }
+
+    // The candidate budget is deliberately NOT api.queryLimits.pokemon. That
+    // one is a display budget protecting the browser; this filter keeps roughly
+    // 1 eligible row in 512, so what the browser receives is tiny and the limit
+    // that matters is a server-side enumeration count. Never go below the
+    // display limit, so the additive half can't come back smaller than it does
+    // with the filter off.
+    //
+    // SQL only, on purpose. Golbat's scan limit clamps DOWNWARD only
+    // (`if req.Limit > 0 && req.Limit < maxPokemon`), so asking it for more
+    // than its `tuning.max_pokemon_results` is silently ignored and would just
+    // make the number here look like it applied to both paths.
+    const endpointLimit = queryLimits.pokemon + queryLimits.pokemonPvp
+    const rowLimit = mem
+      ? endpointLimit
+      : shinyFilterActive
+        ? Math.max(queryLimits.pokemon, shinyConfig.candidateLimit)
+        : queryLimits.pokemon
+
+    const scanBody = mem
+      ? JSON.stringify({
+          min: {
+            latitude: args.minLat,
+            longitude: args.minLon,
+          },
+          max: {
+            latitude: args.maxLat,
+            longitude: args.maxLon,
+          },
+          limit: rowLimit,
+          filters,
+        })
+      : null
+
+    // The v3 scan route answers with an envelope carrying `limit_reached`,
+    // which is the only trustworthy truncation signal: Golbat computes it from
+    // the matched keys BEFORE the response pass drops expired and uncached
+    // rows, so the array that arrives is a subset of what the flag was computed
+    // from. Only worth the switch when the filter is on - v2 stays the request
+    // for every ordinary poll, so this adds nothing to the hot path.
+    const wantsV3 = !!mem && shinyFilterActive && !ENDPOINTS_WITHOUT_V3.has(mem)
+
+    /** @type {any} */
     let results = await this.evalQuery(
-      mem ? `${mem}/api/pokemon/v2/scan` : null,
-      mem
-        ? JSON.stringify({
-            min: {
-              latitude: args.minLat,
-              longitude: args.minLon,
-            },
-            max: {
-              latitude: args.maxLat,
-              longitude: args.maxLon,
-            },
-            limit: queryLimits.pokemon + queryLimits.pokemonPvp,
-            filters,
-          })
-        : query.limit(queryLimits.pokemon),
+      mem ? `${mem}/api/pokemon/${wantsV3 ? 'v3' : 'v2'}/scan` : null,
+      mem ? scanBody : query.limit(rowLimit),
       'POST',
       secret,
       httpAuth,
     )
+
+    // True only when v3 answered and said so. A fallback leaves it false and
+    // the blanket declaration below takes over, because an endpoint whose cap
+    // ReactMap cannot see must not be reported as a complete answer.
+    let endpointLimitReached = false
+    if (wantsV3) {
+      const envelope = Pokemon.unwrapScanV3(results)
+      if (envelope) {
+        endpointLimitReached = envelope.limitReached
+        results = envelope.rows
+      } else {
+        // Older Golbat: no v3 route, so the 404 arrives as a non-envelope and
+        // would otherwise become an empty map while the filter is on. Remember
+        // it per endpoint so this costs one wasted request per process rather
+        // than one per 20-second poll; a Golbat upgraded in place needs a
+        // ReactMap restart before the exact flag comes back, and until then the
+        // declared-incomplete path is still correct, just coarser.
+        ENDPOINTS_WITHOUT_V3.add(mem)
+        log.warn(
+          TAGS.pokemon,
+          `${mem} did not answer /api/pokemon/v3/scan with an envelope; falling back to v2 and reporting shiny candidate sets as possibly incomplete`,
+        )
+        results = await this.evalQuery(
+          `${mem}/api/pokemon/v2/scan`,
+          scanBody,
+          'POST',
+          secret,
+          httpAuth,
+        )
+      }
+    }
 
     if (mem && manualId !== null) {
       const loadedIds = Array.isArray(results)
@@ -300,6 +450,47 @@ class Pokemon extends Model {
       results = []
     }
 
+    if (shinyFilterActive) {
+      // Before the filter loop, because PkmnBackend.valid() filters on
+      // `predicted_shiny` and cannot read a field that has not been written
+      // yet. Same function the resolver calls, so the filter and the popup line
+      // cannot disagree about a spawn.
+      annotatePredictions(results, shinyPlayerIds)
+
+      // Truncation is a user-visible state, not a log line: the rows that never
+      // arrived are exactly where the user's shinies would have been, and a
+      // filtered-down empty map looks identical to "none right now".
+      //
+      // SQL is exact. The endpoint is not, and a row count cannot make it so:
+      // Golbat decides `limit_reached` from the number of MATCHED KEYS, then
+      // builds the array in a later pass that drops expired and uncached rows,
+      // so a truncated scan can return any number of rows (2847 rows returned
+      // with `limit_reached` true against a cap of 3000, measured). A
+      // row-count threshold is therefore unsound in both directions - it fires
+      // on an honest dense result and stays silent on a truncated sparse one -
+      // and `/api/pokemon/v2/scan` returns a bare array with no flag to read.
+      // So the endpoint answer comes from v3's `limit_reached` where v3 exists,
+      // and where it does not the source is declared possibly incomplete while
+      // the filter is on - the truthful statement ReactMap can still make,
+      // since it can neither raise that cap nor filter before it.
+      const truncated = mem
+        ? endpointLimitReached || ENDPOINTS_WITHOUT_V3.has(mem)
+        : results.length >= rowLimit
+      if (truncated) {
+        args.shinyCandidatesTruncated = true
+        log.warn(
+          TAGS.pokemon,
+          mem
+            ? `shiny candidate set from endpoint ${mem} is incomplete (${
+                endpointLimitReached
+                  ? 'limit_reached'
+                  : 'no v3 scan route, so the cap is not observable'
+              }); ${results.length} rows arrived and predictions describe only those`
+            : `shiny candidate set truncated at ${results.length} rows from sql; predictions describe only the rows that arrived`,
+        )
+      }
+    }
+
     const finalResults = []
     const pvpResults = []
     const listOfIds = []
@@ -321,8 +512,15 @@ class Pokemon extends Model {
         finalResults.push(result)
       }
     }
-    // second query for pvp
-    if (!mem && queryPvp) {
+    // second query for pvp. The budget is counted against the DISPLAY limit,
+    // not against `results.length`: with the shiny candidate branch active the
+    // first query can return far more rows than `api.queryLimits.pokemonPvp`,
+    // and `pokemonPvp - results.length` would then be negative - a negative
+    // SQL LIMIT, which is a syntax error. Capping the subtrahend keeps today's
+    // arithmetic identical whenever the filter is off.
+    const pvpLimit =
+      queryLimits.pokemonPvp - Math.min(results.length, queryLimits.pokemon)
+    if (!mem && queryPvp && pvpLimit > 0) {
       const pvpQuery = this.query()
       pvpQuery.where('expire_timestamp', '>=', ts)
       applyManualIdFilter(pvpQuery, {
@@ -345,12 +543,20 @@ class Pokemon extends Model {
       pvpResults.push(
         ...(await this.evalQuery(
           mem,
-          pvpQuery.limit(queryLimits.pokemonPvp - results.length),
+          pvpQuery.limit(pvpLimit),
           'POST',
           secret,
           httpAuth,
         )),
       )
+    }
+
+    if (shinyFilterActive) {
+      // The second query can return rows the first one never saw, and they are
+      // filtered by the same `valid()`. Re-annotating rows that came from the
+      // first query is free and deterministic, so one call over the whole list
+      // is simpler than tracking which half needs it.
+      annotatePredictions(pvpResults, shinyPlayerIds)
     }
 
     for (let i = 0; i < pvpResults.length; i += 1) {
@@ -515,6 +721,66 @@ class Pokemon extends Model {
    * @param {import("@rm/types").DbContext} ctx
    * @returns {boolean}
    */
+  /**
+   * Unwraps a /api/pokemon/v3/scan envelope, or returns null when the response
+   * is not one - which is how an older Golbat without that route announces
+   * itself, since a 404 does not arrive here as an envelope.
+   *
+   * A bare array MUST return null rather than being passed through: v2's array
+   * carries no truncation flag, and silently accepting it would report a capped
+   * scan as a complete answer. That is also the only way a future revert to v2
+   * makes itself heard.
+   * @param {unknown} response
+   * @returns {{ rows: any[], limitReached: boolean } | null}
+   */
+  static unwrapScanV3(response) {
+    if (!response || typeof response !== 'object' || Array.isArray(response)) {
+      return null
+    }
+    const envelope = /** @type {Record<string, unknown>} */ (response)
+    if (!Array.isArray(envelope.pokemon)) return null
+    return {
+      rows: envelope.pokemon,
+      limitReached: !!envelope.limit_reached,
+    }
+  }
+
+  /**
+   * The DNF clauses that fetch shiny candidates from a Golbat endpoint: one
+   * condition-free clause per `{pokemon, form}` key the request already uses,
+   * plus one catch-all for everything else.
+   *
+   * The repetition is load-bearing and MUST NOT be deduplicated. Golbat
+   * evaluates exactly ONE clause group per candidate - most specific first
+   * (`{id,form}`, `{id,-1}`, `{-1,-1}`) - and never merges groups, so a lone
+   * catch-all is skipped for every species the user's own filter has keyed:
+   * their predicted shiny of a filtered species would be dropped by the filter
+   * meant to surface it, with nothing to notice. Clauses inside a group are
+   * OR'd, so repeating this one under each key gives the union.
+   * @param {import("@rm/types").DnfFilter[]} filters
+   * @returns {import("@rm/types").DnfFilter[]}
+   */
+  static shinyCandidateClauses(filters) {
+    /** @type {Map<string, import("@rm/types").FilterId>} */
+    const keys = new Map()
+    filters.forEach((entry) => {
+      const entryPokemon = Array.isArray(entry.pokemon)
+        ? entry.pokemon
+        : entry.pokemon
+          ? [entry.pokemon]
+          : []
+      entryPokemon.forEach((key) => {
+        if (key && typeof key.id === 'number') {
+          keys.set(`${key.id}-${key.form ?? -1}`, key)
+        }
+      })
+    })
+    // The catch-all is last and carries no `pokemon` at all, which is what
+    // lands it under Golbat's `{-1,-1}` key. An empty clause list would mean
+    // the opposite of a catch-all: nothing matches.
+    return [...[...keys.values()].map((key) => ({ pokemon: [key] })), {}]
+  }
+
   static supportsShinyPrediction(ctx) {
     return (
       ctx?.hasSeenType === true &&

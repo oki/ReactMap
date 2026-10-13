@@ -90,6 +90,30 @@ const trimFilters = (requestedFilters, userSettings, category, onlyAreas) => {
   return trimmed
 }
 
+/**
+ * Says out loud that a "My shinies" answer was cut short. Without it the
+ * failure mode is a map that looks like a complete answer: the rows that never
+ * arrived are exactly the ones the user's shinies would have been in, and a
+ * near-empty map is indistinguishable from "none right now". The flag is only
+ * ever raised while the filter is on, so this is quiet for everyone else.
+ */
+function ShinyTruncationWarning() {
+  const truncated = useMemory((s) => s.shinyCandidatesTruncated)
+
+  if (!truncated) return null
+  return (
+    <Notification
+      open
+      severity="warning"
+      i18nKey="shiny_candidates_truncated"
+      messages={[
+        { key: 'truncated', variables: [] },
+        { key: 'zoomIn', variables: [] },
+      ]}
+    />
+  )
+}
+
 export function FilterPermCheck({ category }) {
   const valid = usePermCheck(category)
   const error = useMemory((s) => s.clientError)
@@ -238,6 +262,7 @@ function QueryData({ category, timeout }) {
         ))}
       </Clustering>
       {category === 'weather' && <ActiveWeather weatherData={filteredData} />}
+      {normalizedCategory === 'pokemon' && <ShinyTruncationWarning />}
     </>
   )
 }

@@ -174,6 +174,9 @@ function buildDefaultFilters(perms) {
             gender: defaultFilters.pokemon.globalValues.gender,
             zeroIv: perms.iv ? false : undefined,
             hundoIv: perms.iv ? true : undefined,
+            // Off by default: on would spend the candidate enumeration on every
+            // eligible user's polls without anyone asking for it.
+            predictedShiny: perms.shiny ? false : undefined,
             filter: pokemon.full,
           }
         : undefined,

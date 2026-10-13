@@ -137,6 +137,7 @@
     "shinyPrediction": {
       "odds": 512,
       "accountCacheSeconds": 60,
+      "candidateLimit": 50000,
       "unreleasedShinySpecies": [
         824, 825, 826, 829, 830, 835, 836, 837, 838, 839, 852, 885, 917, 931,
         971
@@ -454,6 +455,13 @@
           "num": 1,
           "value": "#0000ff",
           "op": "<="
+        },
+        {
+          "name": "MyShinies",
+          "perm": "shiny",
+          "field": "predicted_shiny",
+          "value": "#ffd700",
+          "exclusive": true
         },
         {
           "name": "Multiple",

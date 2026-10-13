@@ -388,6 +388,10 @@
         "__name": "API_SHINY_PREDICTION_ACCOUNT_CACHE_SECONDS",
         "__format": "number"
       },
+      "candidateLimit": {
+        "__name": "API_SHINY_PREDICTION_CANDIDATE_LIMIT",
+        "__format": "number"
+      },
       "unreleasedShinySpecies": {
         "__name": "API_SHINY_PREDICTION_UNRELEASED_SHINY_SPECIES",
         "__format": "json"

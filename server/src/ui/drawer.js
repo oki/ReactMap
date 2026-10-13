@@ -8,6 +8,7 @@ const {
 const {
   hasAnyPokestopPermission,
 } = require('../utils/hasAnyPokestopPermission')
+const { sourcesSupportShinyPrediction } = require('../services/shinyPrediction')
 
 /** @typedef {import('@rm/types').RMSlider} Slider */
 
@@ -98,6 +99,13 @@ function drawer(req, perms) {
             // gender: true,
             zeroIv: perms.iv || BLOCKED,
             hundoIv: perms.iv || BLOCKED,
+            // Permission + source capability only. The third condition - at
+            // least one linked game account - needs a database read, and this
+            // runs inside the synchronous getServerSettings, so the client
+            // applies it through featureFlags.supportsShinyPrediction.
+            predictedShiny:
+              (perms.shiny && sourcesSupportShinyPrediction(state.db)) ||
+              BLOCKED,
             sliders: {
               primary: [
                 {
