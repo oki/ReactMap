@@ -5,6 +5,7 @@ const path = require('path')
 
 const { log, TAGS } = require('@rm/logger')
 
+const { ensureShinyGlow } = require('./ensureShinyGlow')
 const { validateJsons } = require('./validateJsons')
 
 let firstRun = true
@@ -270,6 +271,20 @@ const applyMutations = (config) => {
       )
     }
   })
+
+  // See ensureShinyGlow: node-config replaces arrays, so a local.json that
+  // defines its own glow rules would silently never receive the
+  // predicted-shiny one.
+  const addedGlow = ensureShinyGlow(
+    config.clientSideOptions?.pokemon?.glow,
+    defaults?.clientSideOptions?.pokemon?.glow,
+  )
+  if (addedGlow && firstRun) {
+    log.info(
+      TAGS.config,
+      `Added the \`${addedGlow}\` glow rule to clientSideOptions.pokemon.glow - your own rules are kept, and the colour is yours to change in the settings menu`,
+    )
+  }
 
   const aliasObj = Object.fromEntries(
     config.authentication.aliases.map((alias) => [alias.name, alias.role]),

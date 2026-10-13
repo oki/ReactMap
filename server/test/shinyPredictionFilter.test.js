@@ -221,3 +221,75 @@ test('The v3 unwrapper reads the envelope exactly as Golbat serializes it', () =
     limitReached: false,
   })
 })
+
+test('An unreachable endpoint is never recorded as lacking the v3 route', () => {
+  const { Pokemon } = require('../src/models/Pokemon')
+  const { Response } = require('node-fetch')
+
+  // What a dropped ssh tunnel or a restarting Golbat looks like coming out of
+  // fetchJson. Recording these as "no v3 route" downgraded a live instance to
+  // the v2 path for the rest of the process, with the log blaming the wrong
+  // thing the whole time.
+  assert.equal(Pokemon.classifyScanV3Miss(undefined), 'unreachable')
+  assert.equal(Pokemon.classifyScanV3Miss(null), 'unreachable')
+  assert.equal(
+    Pokemon.classifyScanV3Miss(new Error('connect ECONNREFUSED')),
+    'unreachable',
+  )
+  // A bad minute on the server is not evidence about its routes either.
+  assert.equal(
+    Pokemon.classifyScanV3Miss(new Response('', { status: 500 })),
+    'unreachable',
+  )
+  assert.equal(
+    Pokemon.classifyScanV3Miss(new Response('', { status: 503 })),
+    'unreachable',
+  )
+})
+
+test('A server that answers about the route is believed', () => {
+  const { Pokemon } = require('../src/models/Pokemon')
+  const { Response } = require('node-fetch')
+
+  assert.equal(
+    Pokemon.classifyScanV3Miss(new Response('', { status: 404 })),
+    'no-route',
+  )
+  assert.equal(
+    Pokemon.classifyScanV3Miss(new Response('', { status: 405 })),
+    'no-route',
+  )
+  // 501 is the server stating it does not implement this, unlike other 5xx.
+  assert.equal(
+    Pokemon.classifyScanV3Miss(new Response('', { status: 501 })),
+    'no-route',
+  )
+  // A 200 whose body this consumer cannot use is still an answer.
+  assert.equal(Pokemon.classifyScanV3Miss({ examined: 1 }), 'no-route')
+  assert.equal(Pokemon.classifyScanV3Miss([{ id: '1' }]), 'no-route')
+})
+
+test('The no-v3 verdict expires instead of lasting the whole process', () => {
+  const { Pokemon } = require('../src/models/Pokemon')
+  const endpoint = 'http://test-endpoint-ttl:9001'
+  const originalNow = Date.now
+
+  try {
+    assert.equal(Pokemon.endpointLacksScanV3(endpoint), false)
+
+    Date.now = () => 1_000_000
+    Pokemon.rememberMissingScanV3(endpoint)
+    assert.equal(Pokemon.endpointLacksScanV3(endpoint), true)
+
+    // Still believed just before the TTL...
+    Date.now = () => 1_000_000 + 30 * 60 * 1000 - 1
+    assert.equal(Pokemon.endpointLacksScanV3(endpoint), true)
+
+    // ...and probed again after it, so a Golbat upgraded in place recovers on
+    // its own rather than needing a ReactMap restart.
+    Date.now = () => 1_000_000 + 30 * 60 * 1000 + 1
+    assert.equal(Pokemon.endpointLacksScanV3(endpoint), false)
+  } finally {
+    Date.now = originalNow
+  }
+})

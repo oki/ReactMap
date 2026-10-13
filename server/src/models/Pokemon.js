@@ -32,13 +32,22 @@ const {
 const { state } = require('../services/state')
 
 /**
- * Endpoints that answered /api/pokemon/v3/scan with something other than its
- * envelope, i.e. Golbat builds without that route. Process-lifetime on
- * purpose: the only cost of being wrong is a coarser truncation warning, and
- * re-probing on every poll would spend a wasted request per 20 seconds.
- * @type {Set<string>}
+ * Endpoints whose server ANSWERED that it has no /api/pokemon/v3/scan route,
+ * mapped to the time that verdict expires.
+ *
+ * Two deliberate properties, both learned the hard way. It is only ever set
+ * when the endpoint actually replied, never when the request failed to reach
+ * it: a dropped ssh tunnel used to be recorded as "no v3 route", which
+ * downgraded the instance to v2 plus a blanket incompleteness warning for the
+ * rest of the process, with the log naming the wrong cause the whole time. And
+ * it expires, so a Golbat upgraded in place recovers on its own instead of
+ * needing a ReactMap restart.
+ * @type {Map<string, number>}
  */
-const ENDPOINTS_WITHOUT_V3 = new Set()
+const ENDPOINTS_WITHOUT_V3 = new Map()
+
+/** How long a "this endpoint has no v3 route" verdict is trusted. */
+const V3_PROBE_TTL_MS = 30 * 60 * 1000
 
 class Pokemon extends Model {
   static get tableName() {
@@ -384,7 +393,8 @@ class Pokemon extends Model {
     // rows, so the array that arrives is a subset of what the flag was computed
     // from. Only worth the switch when the filter is on - v2 stays the request
     // for every ordinary poll, so this adds nothing to the hot path.
-    const wantsV3 = !!mem && shinyFilterActive && !ENDPOINTS_WITHOUT_V3.has(mem)
+    const wantsV3 =
+      !!mem && shinyFilterActive && !Pokemon.endpointLacksScanV3(mem)
 
     /** @type {any} */
     let results = await this.evalQuery(
@@ -404,17 +414,16 @@ class Pokemon extends Model {
       if (envelope) {
         endpointLimitReached = envelope.limitReached
         results = envelope.rows
-      } else {
-        // Older Golbat: no v3 route, so the 404 arrives as a non-envelope and
-        // would otherwise become an empty map while the filter is on. Remember
-        // it per endpoint so this costs one wasted request per process rather
-        // than one per 20-second poll; a Golbat upgraded in place needs a
-        // ReactMap restart before the exact flag comes back, and until then the
-        // declared-incomplete path is still correct, just coarser.
-        ENDPOINTS_WITHOUT_V3.add(mem)
+      } else if (Pokemon.classifyScanV3Miss(results) === 'no-route') {
+        // Older Golbat: the route is genuinely absent, so its 404 arrives as a
+        // non-envelope and would otherwise become an empty map while the filter
+        // is on. Remember the verdict for a while, so this costs one wasted
+        // request per TTL rather than one per 20-second poll, and falls back to
+        // the coarser declared-incomplete path in the meantime.
+        Pokemon.rememberMissingScanV3(mem)
         log.warn(
           TAGS.pokemon,
-          `${mem} did not answer /api/pokemon/v3/scan with an envelope; falling back to v2 and reporting shiny candidate sets as possibly incomplete`,
+          `${mem} answered /api/pokemon/v3/scan with no usable envelope; falling back to v2 and reporting shiny candidate sets as possibly incomplete`,
         )
         results = await this.evalQuery(
           `${mem}/api/pokemon/v2/scan`,
@@ -422,6 +431,16 @@ class Pokemon extends Model {
           'POST',
           secret,
           httpAuth,
+        )
+      } else {
+        // The endpoint never answered, or answered 5xx. That says nothing about
+        // which routes it has, so the verdict is NOT recorded and the next poll
+        // probes v3 again. Retrying on v2 here would only be a second doomed
+        // request; the generic guard below turns this into an empty result, the
+        // same as any other unreachable source.
+        log.warn(
+          TAGS.pokemon,
+          `${mem} did not answer /api/pokemon/v3/scan - the endpoint is unreachable or erroring, which is not evidence that it lacks the route, so v3 will be tried again on the next poll`,
         )
       }
     }
@@ -474,7 +493,7 @@ class Pokemon extends Model {
       // the filter is on - the truthful statement ReactMap can still make,
       // since it can neither raise that cap nor filter before it.
       const truncated = mem
-        ? endpointLimitReached || ENDPOINTS_WITHOUT_V3.has(mem)
+        ? endpointLimitReached || Pokemon.endpointLacksScanV3(mem)
         : results.length >= rowLimit
       if (truncated) {
         args.shinyCandidatesTruncated = true
@@ -721,6 +740,61 @@ class Pokemon extends Model {
    * @param {import("@rm/types").DbContext} ctx
    * @returns {boolean}
    */
+  /**
+   * Whether this endpoint is currently believed to have no v3 scan route. The
+   * verdict expires, so an upgraded Golbat recovers without a restart.
+   * @param {string} mem
+   * @returns {boolean}
+   */
+  static endpointLacksScanV3(mem) {
+    const until = ENDPOINTS_WITHOUT_V3.get(mem)
+    if (!until) return false
+    if (until <= Date.now()) {
+      ENDPOINTS_WITHOUT_V3.delete(mem)
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Records that this endpoint answered without a usable v3 envelope. Only
+   * ever called for a `'no-route'` classification - see `classifyScanV3Miss`.
+   * @param {string} mem
+   */
+  static rememberMissingScanV3(mem) {
+    ENDPOINTS_WITHOUT_V3.set(mem, Date.now() + V3_PROBE_TTL_MS)
+  }
+
+  /**
+   * What a non-envelope answer to the v3 probe means. Only `'no-route'` is
+   * evidence about the endpoint's routes; the rest is evidence about the
+   * network or a bad minute, and must not be remembered.
+   *
+   * `fetchJson` returns the `Response` when the server answered with an HTTP
+   * error, and something that is not one - `undefined`, or the underlying
+   * system error - when the request never got an answer at all. That is the
+   * whole discriminator: a reply is evidence, silence is not.
+   * @param {unknown} response
+   * @returns {'no-route' | 'unreachable'}
+   */
+  static classifyScanV3Miss(response) {
+    const answer = /** @type {{ status?: unknown, ok?: unknown }} */ (
+      response || {}
+    )
+    if (typeof answer.status === 'number' && typeof answer.ok === 'boolean') {
+      // 5xx is a bad minute, not a missing route - except 501, which is the
+      // server saying it does not implement this.
+      return answer.status >= 500 && answer.status !== 501
+        ? 'unreachable'
+        : 'no-route'
+    }
+    if (!response || response instanceof Error) return 'unreachable'
+    // A parsed body that is neither an envelope nor an HTTP error: the server
+    // answered with something this consumer cannot use, which is as good as
+    // not having the route.
+    return 'no-route'
+  }
+
   /**
    * Unwraps a /api/pokemon/v3/scan envelope, or returns null when the response
    * is not one - which is how an older Golbat without that route announces
