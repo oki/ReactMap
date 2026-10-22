@@ -304,13 +304,16 @@ const resolvers = {
         // the browser, so putting an identity in it would publish it.
         //
         // `Db.getAll` rather than `Db.query` because it is the overload that
-        // forwards `userId` to the model, which the "My shinies" filter needs
-        // to read the same accounts (the legacy path carries no filter, so it
-        // stays on `Db.query`).
+        // forwards `userId` to the model: the "My shinies" filter and the
+        // Golbat-side roll both read the same linked accounts, on both paths.
         const [results, playerIds] = await Promise.all([
-          args.filters.onlyLegacy
-            ? Db.query('Pokemon', 'getLegacy', perms, args)
-            : Db.getAll('Pokemon', perms, args, userId),
+          Db.getAll(
+            'Pokemon',
+            perms,
+            args,
+            userId,
+            args.filters.onlyLegacy ? 'getLegacy' : 'getAll',
+          ),
           getPredictionPlayerIds(Db, perms, userId),
         ])
         // The model reports a capped candidate set on `args` - the only

@@ -499,18 +499,7 @@ class Pokemon extends Model {
     }
 
     if (golbatRoll) {
-      // Golbat's verdict becomes `predicted_shiny` on every row, false included,
-      // so `annotatePredictions` downstream leaves these rows alone. The player
-      // id lists are dropped here: nothing past this point may carry them.
-      for (let i = 0; i < results.length; i += 1) {
-        const row = results[i]
-        if (row && typeof row === 'object') {
-          row.predicted_shiny =
-            Array.isArray(row.shiny_for) && row.shiny_for.length > 0
-          delete row.shiny_for
-          delete row.background_for
-        }
-      }
+      Pokemon.applyEndpointShinyVerdicts(results)
     } else if (shinyFilterActive) {
       // Before the filter loop, because PkmnBackend.valid() filters on
       // `predicted_shiny` and cannot read a field that has not been written
@@ -902,6 +891,26 @@ class Pokemon extends Model {
   }
 
   /**
+   * Golbat's verdict becomes `predicted_shiny` on every row, false included, so
+   * `annotatePredictions` downstream leaves these rows alone and the in-process
+   * roll - which knows neither the feed's rates nor its never-shiny list - can
+   * never contradict the endpoint. The player id lists are dropped here:
+   * nothing past this point may carry them.
+   * @param {any[]} results
+   */
+  static applyEndpointShinyVerdicts(results) {
+    for (let i = 0; i < results.length; i += 1) {
+      const row = results[i]
+      if (row && typeof row === 'object') {
+        row.predicted_shiny =
+          Array.isArray(row.shiny_for) && row.shiny_for.length > 0
+        delete row.shiny_for
+        delete row.background_for
+      }
+    }
+  }
+
+  /**
    * Whether the endpoint rolls personal shinies itself: its /api/status lists
    * `shiny_for` and `annotate_for` (Golbat #423 with `[shiny_rates]`). Only an
    * answer is cached; an unreachable endpoint is asked again next poll.
@@ -1048,12 +1057,23 @@ class Pokemon extends Model {
    * @param {import("@rm/types").DbContext} ctx
    * @returns {Promise<Partial<import("@rm/types").Pokemon>[]>}
    */
-  static async getLegacy(perms, args, ctx) {
+  static async getLegacy(perms, args, ctx, userId) {
     const { hasSize, hasHeight, mem, secret, httpAuth } = ctx
     const ts = Math.floor(Date.now() / 1000)
     const { filterMap, globalFilter } = this.getFilters(perms, args, ctx)
     const manualIdFilter = normalizeManualId(args.filters.onlyManualId)
     const queryLimits = config.getSafe('api.queryLimits')
+
+    // Same delegation as getAll: a Golbat that rolls shinies annotates every
+    // row, so the legacy path never falls back to the in-process roll either.
+    const shinyPlayerIds =
+      !!perms.shiny && Pokemon.supportsShinyPrediction(ctx)
+        ? await getPredictionPlayerIds(state.db, perms, userId)
+        : []
+    const golbatRoll =
+      !!mem &&
+      shinyPlayerIds.length > 0 &&
+      (await Pokemon.endpointRollsShiny(mem, secret, httpAuth))
 
     if (!perms.iv && !perms.pvp) {
       const noPokemonSelect = Object.keys(args.filters).find(
@@ -1092,7 +1112,7 @@ class Pokemon extends Model {
       filters.push(...globalFilter.buildApiFilter())
 
     let results = await this.evalQuery(
-      mem ? `${mem}/api/pokemon/v2/scan` : null,
+      mem ? `${mem}/api/pokemon/${golbatRoll ? 'v3' : 'v2'}/scan` : null,
       mem
         ? JSON.stringify({
             min: {
@@ -1105,12 +1125,17 @@ class Pokemon extends Model {
             },
             limit: queryLimits.pokemon + queryLimits.pokemonPvp,
             filters,
+            ...(golbatRoll ? { annotate_for: shinyPlayerIds } : {}),
           })
         : query,
       'POST',
       secret,
       httpAuth,
     )
+    if (golbatRoll) {
+      // v3 answers with an envelope; anything else is a failed request.
+      results = Pokemon.unwrapScanV3(results)?.rows ?? []
+    }
 
     if (mem && manualId !== null) {
       const loaded = new Set(results.map((pkmn) => `${pkmn.id}`))
@@ -1126,6 +1151,9 @@ class Pokemon extends Model {
           results = [...results, manualResult]
         }
       }
+    }
+    if (golbatRoll) {
+      Pokemon.applyEndpointShinyVerdicts(results)
     }
     const filtered = results.filter(
       (item) =>

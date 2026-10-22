@@ -184,6 +184,25 @@ test('With player ids every clause carries shiny_for, the catch-all included', (
   assert.deepEqual(Pokemon.shinyCandidateClauses([], []), [{}])
 })
 
+test("The endpoint's verdict lands on every row, false included, without the ids", () => {
+  const { Pokemon } = require('../src/models/Pokemon')
+  const rows = [
+    { id: '1', shiny_for: ['a1b2c3d4e5f60718'], background_for: [] },
+    { id: '2', shiny_for: [] },
+    { id: '3' },
+    null,
+  ]
+  Pokemon.applyEndpointShinyVerdicts(rows)
+  // Explicit false, never absent: absent would invite the in-process roll,
+  // which does not know the feed's never-shiny species (Minior, for one).
+  assert.deepEqual(rows.slice(0, 3), [
+    { id: '1', predicted_shiny: true },
+    { id: '2', predicted_shiny: false },
+    { id: '3', predicted_shiny: false },
+  ])
+  assert.equal(rows[3], null)
+})
+
 test('The catch-all carries no pokemon key, and is never an empty clause list', () => {
   const { Pokemon } = require('../src/models/Pokemon')
   // `filters: []` means nothing matches, so there must always be at least the
