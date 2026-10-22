@@ -384,6 +384,10 @@
         "__name": "API_SHINY_PREDICTION_ODDS",
         "__format": "number"
       },
+      "speciesOdds": {
+        "__name": "API_SHINY_PREDICTION_SPECIES_ODDS",
+        "__format": "json"
+      },
       "accountCacheSeconds": {
         "__name": "API_SHINY_PREDICTION_ACCOUNT_CACHE_SECONDS",
         "__format": "number"

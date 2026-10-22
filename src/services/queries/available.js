@@ -12,6 +12,7 @@ export const GET_MAP_DATA = gql`
       audio
       supportsShinyStats
       supportsShinyPrediction
+      shinyOdds
     }
   }
 `

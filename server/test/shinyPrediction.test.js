@@ -10,8 +10,10 @@ const {
   canPredictShiny,
   getPredictionPlayerIds,
   invalidatePlayerIds,
+  getShinyOdds,
   isEligible,
   normalizePlayerId,
+  resolveSpeciesOdds,
 } = require('../src/services/shinyPrediction')
 
 /** Synthetic throughout - a real player id must never appear in this repo. */
@@ -21,6 +23,9 @@ const DIGIT_PLAYER = '123456789012345678901'
 /** Encounter id 1063 is shiny at 1/512 for HEX_PLAYER, 14 is not. */
 const SHINY_ID = '1063'
 const NOT_SHINY_ID = '14'
+
+/** Shiny at 1/128 for HEX_PLAYER and not at 1/512, so the rate alone decides. */
+const BOOSTED_ONLY_ID = '254'
 
 const UNRELEASED = new Set([824, 971])
 
@@ -248,6 +253,48 @@ test('A malformed row is skipped without costing the batch its predictions', () 
   // throwing, so the real spawn beside them is still annotated.
   assert.equal(results[1].predicted_shiny, true)
   assert.equal(results[0], null)
+})
+
+// ------------------------------------------------------ per-species rates
+
+test('A species rate overrides the flat one, and only for that species', () => {
+  const { odds, species } = resolveSpeciesOdds(512, { 309: 128 })
+  assert.equal(odds, 512)
+  assert.deepEqual(species, { 309: 128 })
+})
+
+test('An override that is not a positive rate is ignored', () => {
+  // `0` included deliberately: it reads as "never shiny" and the roll would
+  // honour it, so dropping it is a decision rather than an oversight.
+  const { species } = resolveSpeciesOdds(512, {
+    309: 0,
+    310: -128,
+    311: 'boosted',
+    312: null,
+    '-1': 128,
+    abc: 128,
+  })
+  assert.deepEqual(species, {})
+})
+
+test('Electrike ships at the boosted 1/128', () => {
+  const { odds, species } = getShinyOdds()
+  assert.equal(odds, 512)
+  assert.equal(species[309], 128)
+})
+
+test('The species rate, not the flat one, decides the verdict', () => {
+  // The same encounter id and the same account either way: at 1/512 it is not
+  // shiny and at Electrike's 1/128 it is, so a differing verdict can only
+  // have come from the rate.
+  const flat = [eligibleSpawn({ id: BOOSTED_ONLY_ID, pokemon_id: 25 })]
+  const boosted = [eligibleSpawn({ id: BOOSTED_ONLY_ID, pokemon_id: 309 })]
+
+  annotatePredictions(flat, [HEX_PLAYER])
+  annotatePredictions(boosted, [HEX_PLAYER])
+
+  assert.equal(flat[0].predicted_shiny, false)
+  assert.equal(boosted[0].predicted_shiny, true)
 })
 
 // -------------------------------------------------------- player id shape

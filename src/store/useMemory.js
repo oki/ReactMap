@@ -129,6 +129,13 @@ export const useMemory = create(() => ({
     supportsShinyStats: false,
     supportsShinyPrediction: false,
   },
+  /**
+   * The rate each species is predicted at, from the server's config. Null
+   * until the session is told - and for a session that cannot receive
+   * predictions at all, never.
+   * @type {{ odds: number, species: Record<string, number> } | null}
+   */
+  shinyOdds: null,
   shinyCandidatesTruncated: false,
   available: {
     gyms: [],

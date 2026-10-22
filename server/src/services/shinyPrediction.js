@@ -151,6 +151,58 @@ function isEligible(pokemon, unreleasedShinySpecies) {
   return true
 }
 
+/** @type {Set<string>} */
+const warnedSpeciesOdds = new Set()
+
+/**
+ * The rate each species rolls at: the flat `odds` plus whatever the operator
+ * overrode, as a plain object so the resolver can hand it to the client
+ * unchanged and the popup can name the rate a prediction was made at.
+ *
+ * A rate is a property of the species, not of the account or the spawn, so it
+ * is session data rather than per-row data: 3000 rows a poll would otherwise
+ * each carry a number that changes only when the operator edits the config.
+ *
+ * An override that is not a positive number is dropped rather than honoured.
+ * `0` is the tempting way to write "never shiny" and it would even work - the
+ * roll guards `odds > 0` - but it would be the one rate whose meaning is a
+ * category rather than a frequency, and `unreleasedShinySpecies` already says
+ * that properly. Species ids are JSON keys, so they arrive as strings.
+ *
+ * @param {number} odds the flat 1-in-N rate
+ * @param {Record<string, unknown> | undefined} configured
+ * @returns {{ odds: number, species: Record<string, number> }}
+ */
+function resolveSpeciesOdds(odds, configured) {
+  /** @type {Record<string, number>} */
+  const species = {}
+
+  Object.entries(configured || {}).forEach(([id, rate]) => {
+    const speciesId = Number(id)
+    if (Number.isInteger(speciesId) && speciesId > 0 && Number(rate) > 0) {
+      species[speciesId] = Number(rate)
+      return
+    }
+    if (!warnedSpeciesOdds.has(id)) {
+      warnedSpeciesOdds.add(id)
+      log.warn(
+        TAGS.pokemon,
+        `api.shinyPrediction.speciesOdds["${id}"] is not a species id with a positive rate, so it is ignored and that species keeps the flat 1/${odds}; to stop predicting a species entirely, list it in unreleasedShinySpecies`,
+      )
+    }
+  })
+
+  return { odds, species }
+}
+
+/** The configured rates. @returns {{ odds: number, species: Record<string, number> }} */
+function getShinyOdds() {
+  return resolveSpeciesOdds(
+    config.getSafe('api.shinyPrediction.odds'),
+    config.getSafe('api.shinyPrediction.speciesOdds'),
+  )
+}
+
 /**
  * The SQL-expressible half of `isEligible`, as data rather than as a query, so
  * the candidate prefilter in the model and the gate here cannot drift apart.
@@ -192,7 +244,7 @@ function annotatePredictions(results, playerIds) {
     return results
   }
 
-  const odds = config.getSafe('api.shinyPrediction.odds')
+  const { odds, species: speciesOdds } = getShinyOdds()
   const unreleasedShinySpecies = new Set(
     config.getSafe('api.shinyPrediction.unreleasedShinySpecies'),
   )
@@ -200,7 +252,7 @@ function annotatePredictions(results, playerIds) {
   try {
     // One gate pass, so an ineligible spawn is never re-examined per account
     // and `predicted_shiny` stays absent on it rather than becoming false.
-    /** @type {{ pokemon: T, encounterId: bigint }[]} */
+    /** @type {{ pokemon: T, encounterId: bigint, odds: number }[]} */
     const candidates = []
     for (let i = 0; i < results.length; i += 1) {
       const pokemon = results[i]
@@ -211,7 +263,11 @@ function annotatePredictions(results, playerIds) {
 
       // @ts-ignore
       pokemon.predicted_shiny = false
-      candidates.push({ pokemon, encounterId })
+      candidates.push({
+        pokemon,
+        encounterId,
+        odds: speciesOdds[pokemon.pokemon_id] || odds,
+      })
     }
 
     // Accounts outer, so each one's message buffer is built once rather than
@@ -220,12 +276,12 @@ function annotatePredictions(results, playerIds) {
     // 10000 * (1 - (511/512)^k), so ~19.5 per 10000 at one account and ~194 at
     // ten, bounding the saving at 1.7% of rolls even in the ten account case.
     for (let p = 0; p < playerIds.length; p += 1) {
-      const rollFor = createRoller(playerIds[p], odds)
+      const rollFor = createRoller(playerIds[p])
       for (let i = 0; i < candidates.length; i += 1) {
         const candidate = candidates[i]
         // @ts-ignore
         if (candidate.pokemon.predicted_shiny) continue
-        if (rollFor(candidate.encounterId)) {
+        if (rollFor(candidate.encounterId, candidate.odds)) {
           // @ts-ignore
           candidate.pokemon.predicted_shiny = true
         }
@@ -311,10 +367,12 @@ module.exports = {
   canPredictShiny,
   getCandidatePrefilter,
   getPredictionPlayerIds,
+  getShinyOdds,
   invalidatePlayerIds,
   isEligible,
   maskIdentity,
   normalizePlayerId,
+  resolveSpeciesOdds,
   sourcesSupportShinyPrediction,
   DITTO_ID,
   CLAMPED_COSTUME,

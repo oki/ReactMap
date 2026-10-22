@@ -136,6 +136,9 @@
     },
     "shinyPrediction": {
       "odds": 512,
+      "speciesOdds": {
+        "309": 128
+      },
       "accountCacheSeconds": 60,
       "candidateLimit": 50000,
       "unreleasedShinySpecies": [

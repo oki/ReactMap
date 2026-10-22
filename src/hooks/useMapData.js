@@ -48,6 +48,7 @@ export function useMapData(once = false) {
         questConditions,
         supportsShinyStats,
         supportsShinyPrediction,
+        shinyOdds,
       } = data.available
       const { icons: userIcons, audio: userAudio } = useStorage.getState()
       const existing = useMemory.getState()
@@ -98,6 +99,7 @@ export function useMapData(once = false) {
         filters,
         Icons,
         Audio,
+        shinyOdds: shinyOdds === undefined ? prev.shinyOdds : shinyOdds,
         available: {
           ...prev.available,
           questConditions,

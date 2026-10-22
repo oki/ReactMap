@@ -30,6 +30,7 @@ const {
   annotatePredictions,
   canPredictShiny,
   getPredictionPlayerIds,
+  getShinyOdds,
 } = require('../services/shinyPrediction')
 
 /** @type {import("@apollo/server").ApolloServerOptions<import("@rm/types").GqlContext>['resolvers']} */
@@ -64,6 +65,9 @@ const resolvers = {
         },
         supportsShinyStats,
         supportsShinyPrediction,
+        // Only to a session that can receive a prediction: to everyone else
+        // the rates are a payload that nothing on the page can read.
+        shinyOdds: supportsShinyPrediction ? getShinyOdds() : null,
       }
       return data
     },

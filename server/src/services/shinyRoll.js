@@ -104,18 +104,22 @@ function roll(encounterId, playerId, odds) {
  * Returned as a closure rather than exposed as a mutable buffer so the module
  * stays pure: nothing outside can observe or share the scratch space.
  *
+ * The rate is per call, not per roller: it is a property of the species, and
+ * baking it in would mean one roller - one message buffer, one copy of the
+ * player id bytes - per rate per account.
+ *
  * @param {string} playerId
- * @param {number} odds
- * @returns {(encounterId: bigint) => boolean}
+ * @returns {(encounterId: bigint, odds: number) => boolean}
  */
-function createRoller(playerId, odds) {
-  if (!playerId || !(odds > 0)) return () => false
+function createRoller(playerId) {
+  if (!playerId) return () => false
 
   const playerIdBytes = Buffer.from(playerId, 'utf8')
   const message = Buffer.allocUnsafe(8 + playerIdBytes.length)
   playerIdBytes.copy(message, 8)
 
-  return (encounterId) => {
+  return (encounterId, odds) => {
+    if (!(odds > 0)) return false
     message.writeBigUInt64LE(BigInt.asUintN(64, encounterId), 0)
     const next24 = next24FromSeed(
       crypto.hash('sha1', message, 'buffer').readBigUInt64LE(0),

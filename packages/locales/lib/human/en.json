@@ -385,6 +385,7 @@
   "shiny_probability": "Shiny rate: <0/>",
   "shiny_sample": "{{percentage}}%: {{shiny}} shiny/{{checks}} checks since {{date}}",
   "predicted_shiny": "Predicted shiny for you",
+  "predicted_shiny_rate": "Rolled at 1/{{odds}}",
   "shiny_candidates_truncated_0": "Not every spawn in view could be checked, so some of your predicted shinies may be missing",
   "shiny_candidates_truncated_1": "Please zoom in",
   "exclude_quest_multi": "Exclude {{reward}}",

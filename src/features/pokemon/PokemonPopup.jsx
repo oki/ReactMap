@@ -290,6 +290,7 @@ export function PokemonPopup({ pokemon, iconUrl, isTutorial = false }) {
         timeOfDay={timeOfDay}
         backgroundVisuals={backgroundVisuals}
       />
+      <PredictedShinyRate pokemon={pokemon} />
       <ShinyOdds shinyStats={shinyStats} />
       <Footer
         pokemon={pokemon}
@@ -558,6 +559,38 @@ const ShinyOdds = ({ shinyStats }) => {
             </Tooltip>,
           ]}
         />
+      </Typography>
+    </Grid>
+  )
+}
+
+/**
+ * The rate the prediction was rolled at, which the badge beside the name
+ * cannot say on its own. Only on a positive prediction: the badge is the
+ * claim, this is its denominator, and a rate on a spawn that was not
+ * predicted would be a statistic nobody asked for on every popup.
+ *
+ * Resolved exactly as the server resolves it - the species override, else the
+ * flat rate - because a line that disagreed with the roll would be worse than
+ * no line at all.
+ */
+const PredictedShinyRate = ({ pokemon }) => {
+  const { t } = useTranslation()
+  const shinyOdds = useMemory((s) => s.shinyOdds)
+
+  if (!pokemon.predicted_shiny || !shinyOdds) {
+    return null
+  }
+  const odds = shinyOdds.species?.[pokemon.pokemon_id] || shinyOdds.odds
+  if (!(odds > 0)) {
+    return null
+  }
+
+  return (
+    <Grid xs={12} textAlign="center">
+      {/* The badge's gold, so the line and the icon are visibly one claim. */}
+      <Typography variant="caption" sx={{ color: '#ffd700' }}>
+        {t('predicted_shiny_rate', { odds: odds.toLocaleString() })}
       </Typography>
     </Grid>
   )
