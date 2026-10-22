@@ -241,6 +241,8 @@ export interface DnfFilter {
   pvp_little?: DnfMinMax
   pvp_great?: DnfMinMax
   pvp_ultra?: DnfMinMax
+  /** Golbat #423: match when shiny for any of these player ids */
+  shiny_for?: string[]
 }
 
 export type DiscordVerifyFunction = (

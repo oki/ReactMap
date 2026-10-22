@@ -256,7 +256,11 @@ function annotatePredictions(results, playerIds) {
     const candidates = []
     for (let i = 0; i < results.length; i += 1) {
       const pokemon = results[i]
-      if (!pokemon || !isEligible(pokemon, unreleasedShinySpecies)) continue
+      // A row already judged - by a Golbat that rolls shinies itself, or by
+      // an earlier pass - keeps its verdict; two implementations must never
+      // disagree about one spawn.
+      if (!pokemon || pokemon.predicted_shiny !== undefined) continue
+      if (!isEligible(pokemon, unreleasedShinySpecies)) continue
 
       const encounterId = parseEncounterId(pokemon.id)
       if (encounterId === null) continue

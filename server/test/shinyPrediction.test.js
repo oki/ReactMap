@@ -227,6 +227,19 @@ test('An unsafe numeric encounter id produces no prediction', () => {
   assert.equal('predicted_shiny' in results[0], false)
 })
 
+test('A row already judged keeps its verdict', () => {
+  // Golbat #423 writes `predicted_shiny` (false included) before the resolver
+  // re-runs annotatePredictions over the same rows. The in-process roll says
+  // true for SHINY_ID and false for NOT_SHINY_ID; both must stay as given.
+  const results = [
+    { ...eligibleSpawn({ id: SHINY_ID }), predicted_shiny: false },
+    { ...eligibleSpawn({ id: NOT_SHINY_ID }), predicted_shiny: true },
+  ]
+  annotatePredictions(results, [HEX_PLAYER])
+  assert.equal(results[0].predicted_shiny, false)
+  assert.equal(results[1].predicted_shiny, true)
+})
+
 test('No linked player id means nothing is annotated', () => {
   const results = [eligibleSpawn({ id: SHINY_ID })]
   annotatePredictions(results, [])

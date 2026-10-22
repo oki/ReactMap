@@ -165,6 +165,25 @@ test('The endpoint candidate clause is repeated under every key already present'
   })
 })
 
+test('With player ids every clause carries shiny_for, the catch-all included', () => {
+  const { Pokemon } = require('../src/models/Pokemon')
+  // Golbat #423: `shiny_for` is an ordinary clause condition under the same
+  // most-specific-group rule, so it has to be repeated under every key too.
+  const players = ['a1b2c3d4e5f60718', '123456789012345']
+  const clauses = Pokemon.shinyCandidateClauses(
+    [{ pokemon: [{ id: 25, form: 0 }], iv: { min: 100, max: 100 } }],
+    players,
+  )
+  assert.deepEqual(clauses, [
+    { pokemon: [{ id: 25, form: 0 }], shiny_for: players },
+    { shiny_for: players },
+  ])
+  // An empty id list means the old candidate clauses, not `shiny_for: []`,
+  // which Golbat reads as "personal filtering disabled" on a clause that then
+  // matches everything.
+  assert.deepEqual(Pokemon.shinyCandidateClauses([], []), [{}])
+})
+
 test('The catch-all carries no pokemon key, and is never an empty clause list', () => {
   const { Pokemon } = require('../src/models/Pokemon')
   // `filters: []` means nothing matches, so there must always be at least the

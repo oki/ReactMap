@@ -49,6 +49,14 @@ const ENDPOINTS_WITHOUT_V3 = new Map()
 /** How long a "this endpoint has no v3 route" verdict is trusted. */
 const V3_PROBE_TTL_MS = 30 * 60 * 1000
 
+/**
+ * Endpoints asked whether they roll personal shinies themselves (Golbat #423),
+ * with the answer and when it expires. Same TTL as above, same reason: a
+ * Golbat upgraded in place is picked up without a ReactMap restart.
+ * @type {Map<string, { rolls: boolean, until: number }>}
+ */
+const ENDPOINTS_ROLLING_SHINY = new Map()
+
 class Pokemon extends Model {
   static get tableName() {
     return 'pokemon'
@@ -140,16 +148,25 @@ class Pokemon extends Model {
     // `args.filters`, which is what the browser sent and round-trips back to
     // it. (`state.db` is the same DbManager instance the resolver holds; see
     // middleware/apollo.js, where the GraphQL context's `Db` is `state.db`.)
-    const shinyFilterRequested =
-      !!onlyPredictedShiny &&
-      !!perms.shiny &&
-      Pokemon.supportsShinyPrediction(ctx)
-    const shinyPlayerIds = shinyFilterRequested
-      ? await getPredictionPlayerIds(state.db, perms, userId)
-      : []
+    //
+    // Read for every poll, not only when the filter is on: a Golbat that rolls
+    // shinies itself (#423) annotates every row for the popup badge, which
+    // needs the ids whether or not the filter is active.
+    const shinyPlayerIds =
+      !!perms.shiny && Pokemon.supportsShinyPrediction(ctx)
+        ? await getPredictionPlayerIds(state.db, perms, userId)
+        : []
     // No linked account resolves to no filter rather than to an empty map, so a
     // stale `true` left in a user's stored filters after unlinking is inert.
-    const shinyFilterActive = shinyPlayerIds.length > 0
+    const shinyFilterActive = !!onlyPredictedShiny && shinyPlayerIds.length > 0
+    // Golbat does the roll when its /api/status advertises `shiny_for`; then the
+    // player ids go to it (server to server, never to the browser) and the
+    // in-process roll stays out of the way so Ditto and the feed's rates are
+    // judged by one implementation.
+    const golbatRoll =
+      !!mem &&
+      shinyPlayerIds.length > 0 &&
+      (await Pokemon.endpointRollsShiny(mem, secret, httpAuth))
 
     // quick check to make sure no Pokemon are returned when none are enabled for users with only Pokemon perms
     if (!ivs && !pvp) {
@@ -351,7 +368,15 @@ class Pokemon extends Model {
       // plus the PVP leagues, with no `seen_type`, `costume` or
       // `display_pokemon_id` (see the DnfFilter type). nearby_* and lure_* rows
       // all come back and `isEligible` carries the whole load after the fetch.
-      filters.push(...Pokemon.shinyCandidateClauses(filters))
+      //
+      // With `golbatRoll` the same clauses carry `shiny_for`, so Golbat filters
+      // before its result limit and only the hits come back.
+      filters.push(
+        ...Pokemon.shinyCandidateClauses(
+          filters,
+          golbatRoll ? shinyPlayerIds : undefined,
+        ),
+      )
     }
 
     // The candidate budget is deliberately NOT api.queryLimits.pokemon. That
@@ -384,6 +409,8 @@ class Pokemon extends Model {
           },
           limit: rowLimit,
           filters,
+          // Each row comes back with `shiny_for`: the ids it is shiny for.
+          ...(golbatRoll ? { annotate_for: shinyPlayerIds } : {}),
         })
       : null
 
@@ -394,7 +421,9 @@ class Pokemon extends Model {
     // from. Only worth the switch when the filter is on - v2 stays the request
     // for every ordinary poll, so this adds nothing to the hot path.
     const wantsV3 =
-      !!mem && shinyFilterActive && !Pokemon.endpointLacksScanV3(mem)
+      !!mem &&
+      (golbatRoll || shinyFilterActive) &&
+      !Pokemon.endpointLacksScanV3(mem)
 
     /** @type {any} */
     let results = await this.evalQuery(
@@ -469,7 +498,20 @@ class Pokemon extends Model {
       results = []
     }
 
-    if (shinyFilterActive) {
+    if (golbatRoll) {
+      // Golbat's verdict becomes `predicted_shiny` on every row, false included,
+      // so `annotatePredictions` downstream leaves these rows alone. The player
+      // id lists are dropped here: nothing past this point may carry them.
+      for (let i = 0; i < results.length; i += 1) {
+        const row = results[i]
+        if (row && typeof row === 'object') {
+          row.predicted_shiny =
+            Array.isArray(row.shiny_for) && row.shiny_for.length > 0
+          delete row.shiny_for
+          delete row.background_for
+        }
+      }
+    } else if (shinyFilterActive) {
       // Before the filter loop, because PkmnBackend.valid() filters on
       // `predicted_shiny` and cannot read a field that has not been written
       // yet. Same function the resolver calls, so the filter and the popup line
@@ -570,7 +612,7 @@ class Pokemon extends Model {
       )
     }
 
-    if (shinyFilterActive) {
+    if (shinyFilterActive && !golbatRoll) {
       // The second query can return rows the first one never saw, and they are
       // filtered by the same `valid()`. Re-annotating rows that came from the
       // first query is free and deterministic, so one call over the whole list
@@ -834,7 +876,8 @@ class Pokemon extends Model {
    * @param {import("@rm/types").DnfFilter[]} filters
    * @returns {import("@rm/types").DnfFilter[]}
    */
-  static shinyCandidateClauses(filters) {
+  static shinyCandidateClauses(filters, playerIds = undefined) {
+    const personal = playerIds?.length ? { shiny_for: playerIds } : {}
     /** @type {Map<string, import("@rm/types").FilterId>} */
     const keys = new Map()
     filters.forEach((entry) => {
@@ -852,7 +895,39 @@ class Pokemon extends Model {
     // The catch-all is last and carries no `pokemon` at all, which is what
     // lands it under Golbat's `{-1,-1}` key. An empty clause list would mean
     // the opposite of a catch-all: nothing matches.
-    return [...[...keys.values()].map((key) => ({ pokemon: [key] })), {}]
+    return [
+      ...[...keys.values()].map((key) => ({ pokemon: [key], ...personal })),
+      { ...personal },
+    ]
+  }
+
+  /**
+   * Whether the endpoint rolls personal shinies itself: its /api/status lists
+   * `shiny_for` and `annotate_for` (Golbat #423 with `[shiny_rates]`). Only an
+   * answer is cached; an unreachable endpoint is asked again next poll.
+   * @param {string} mem
+   * @param {string} secret
+   * @param {{ username: string, password: string } | null} httpAuth
+   * @returns {Promise<boolean>}
+   */
+  static async endpointRollsShiny(mem, secret, httpAuth) {
+    const cached = ENDPOINTS_ROLLING_SHINY.get(mem)
+    if (cached && cached.until > Date.now()) return cached.rolls
+    const status = await this.evalQuery(
+      `${mem}/api/status`,
+      undefined,
+      'GET',
+      secret,
+      httpAuth,
+    )
+    const filters = status?.filters
+    if (!filters || typeof filters !== 'object') return false
+    const rolls = filters.shiny_for === true && filters.annotate_for === true
+    ENDPOINTS_ROLLING_SHINY.set(mem, {
+      rolls,
+      until: Date.now() + V3_PROBE_TTL_MS,
+    })
+    return rolls
   }
 
   static supportsShinyPrediction(ctx) {
